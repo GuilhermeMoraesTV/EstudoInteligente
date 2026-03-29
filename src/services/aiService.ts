@@ -1,5 +1,5 @@
 // Serviço centralizado para chamadas à API do Google Gemini.
-// Utiliza o modelo gemini-2.0-flash para extrema rapidez.
+// Usa fallback automático entre modelos para evitar erros 404 de modelo indisponível.
 // Todas as respostas são em JSON estruturado.
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -13,6 +13,61 @@ if (!API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(API_KEY || "");
+
+const MODELOS_GEMINI = [
+  "gemini-2.5-flash",
+  "gemini-flash-latest",
+  "gemini-1.5-pro-latest",
+  "gemini-1.5-flash-latest",
+  "gemini-2.0-flash",
+];
+
+type ConfiguracaoGeracao = {
+  responseMimeType?: string;
+  temperature?: number;
+  maxOutputTokens?: number;
+};
+
+const ehErroModeloIndisponivel = (mensagem: string) => {
+  const msg = mensagem.toLowerCase();
+  return (
+    msg.includes("404") &&
+    (msg.includes("not found") ||
+      msg.includes("no longer available") ||
+      msg.includes("is not found") ||
+      msg.includes("models/"))
+  );
+};
+
+const gerarTextoComFallbackDeModelo = async (
+  prompt: string,
+  generationConfig: ConfiguracaoGeracao
+): Promise<string> => {
+  let ultimoErro: unknown;
+
+  for (const nomeModelo of MODELOS_GEMINI) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: nomeModelo,
+        generationConfig,
+      });
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (error: any) {
+      const mensagem = error?.message || "";
+      if (ehErroModeloIndisponivel(mensagem)) {
+        ultimoErro = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw (
+    ultimoErro ||
+    new Error("Nenhum modelo Gemini disponível para esta API key no momento.")
+  );
+};
 
 // Formato esperado da resposta da IA
 export interface RespostaIA {
@@ -39,15 +94,6 @@ export const gerarConteudoEstudo = async (texto: string): Promise<RespostaIA> =>
       "API Key do Gemini não configurada. Defina VITE_GEMINI_API_KEY no arquivo .env."
     );
   }
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash-latest",
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.7,
-      maxOutputTokens: 8192,
-    },
-  });
 
   const prompt = `Você é um professor especialista em concursos públicos brasileiros. Analise o texto abaixo e gere conteúdo de estudo de alta qualidade.
 
@@ -86,9 +132,11 @@ ${texto}`;
 
   while (tentativa < MAX_TENTATIVAS) {
     try {
-      const result = await model.generateContent(prompt);
-      const response = result.response;
-      const textoResposta = response.text();
+      const textoResposta = await gerarTextoComFallbackDeModelo(prompt, {
+        responseMimeType: "application/json",
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+      });
 
       // Tenta parsear o JSON retornado
       const dados: RespostaIA = JSON.parse(textoResposta);
@@ -124,6 +172,12 @@ ${texto}`;
         continue;
       }
 
+      if (ehErroModeloIndisponivel(mensagem)) {
+        throw new Error(
+          "Os modelos Gemini configurados não estão disponíveis para esta API key/projeto. Gere uma nova API key no AI Studio e tente novamente."
+        );
+      }
+
       if (error instanceof SyntaxError) {
         throw new Error(
           "Erro ao processar a resposta da IA. O formato JSON retornado é inválido. Tente novamente."
@@ -147,14 +201,6 @@ export const gerarFeedbackDesempenho = async (
     return "Configure a API Key do Gemini para receber feedback personalizado.";
   }
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash-latest",
-    generationConfig: {
-      temperature: 0.5,
-      maxOutputTokens: 512,
-    },
-  });
-
   const prompt = `Você é um tutor de concursos públicos. O aluno acabou de terminar uma sessão de estudo com taxa de acerto de ${taxaAcerto}%.
 
 ${temasErrados.length > 0 ? `Ele errou questões sobre os seguintes temas: ${temasErrados.join(", ")}.` : "Ele acertou todas as questões."}
@@ -162,8 +208,10 @@ ${temasErrados.length > 0 ? `Ele errou questões sobre os seguintes temas: ${tem
 Dê um feedback breve, motivador e estratégico (máximo 3 frases). Sugira o que ele deve revisar ou como pode melhorar. Seja direto e objetivo.`;
 
   try {
-    const result = await model.generateContent(prompt);
-    return result.response.text();
+    return await gerarTextoComFallbackDeModelo(prompt, {
+      temperature: 0.5,
+      maxOutputTokens: 512,
+    });
   } catch {
     return "Continue praticando! A consistência é a chave para a aprovação em concursos.";
   }

@@ -10,11 +10,12 @@ import {
   addDoc,
   query,
   where,
-  orderBy,
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "./firebaseConfig";
+
+const timestampToMillis = (valor?: Timestamp) => valor?.toMillis?.() ?? 0;
 
 // ==================== PERFIL DO USUÁRIO ====================
 
@@ -75,13 +76,11 @@ export const salvarMaterial = async (
 
 /** Busca todos os materiais do usuário */
 export const buscarMateriaisDoUsuario = async (userId: string): Promise<Material[]> => {
-  const q = query(
-    collection(db, "materiais"),
-    where("userId", "==", userId),
-    orderBy("criadoEm", "desc")
-  );
+  const q = query(collection(db, "materiais"), where("userId", "==", userId));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Material));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Material))
+    .sort((a, b) => timestampToMillis(b.criadoEm) - timestampToMillis(a.criadoEm));
 };
 
 // ==================== QUESTÕES ====================
@@ -188,13 +187,12 @@ export const salvarFlashcards = async (
 /** Busca flashcards pendentes de revisão (data <= agora) */
 export const buscarFlashcardsPendentes = async (userId: string): Promise<Flashcard[]> => {
   const agora = Timestamp.now();
-  const q = query(
-    collection(db, "flashcards"),
-    where("userId", "==", userId),
-    where("proximaRevisao", "<=", agora)
-  );
+  const q = query(collection(db, "flashcards"), where("userId", "==", userId));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Flashcard));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() } as Flashcard))
+    .filter((f) => timestampToMillis(f.proximaRevisao) <= agora.toMillis())
+    .sort((a, b) => timestampToMillis(a.proximaRevisao) - timestampToMillis(b.proximaRevisao));
 };
 
 /** Busca todos os flashcards do usuário */
@@ -290,13 +288,11 @@ export const registrarResposta = async (
 export const buscarHistoricoDoUsuario = async (
   userId: string
 ): Promise<HistoricoResposta[]> => {
-  const q = query(
-    collection(db, "historico_respostas"),
-    where("userId", "==", userId),
-    orderBy("criadoEm", "desc")
-  );
+  const q = query(collection(db, "historico_respostas"), where("userId", "==", userId));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as HistoricoResposta));
+  return snapshot.docs
+    .map((d) => ({ id: d.id, ...d.data() } as HistoricoResposta))
+    .sort((a, b) => timestampToMillis(b.criadoEm) - timestampToMillis(a.criadoEm));
 };
 
 /** Calcula estatísticas gerais do usuário */

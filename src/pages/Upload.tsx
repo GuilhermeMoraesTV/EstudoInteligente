@@ -5,6 +5,7 @@ import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { gerarConteudoEstudo } from "../services/aiService";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   salvarMaterial,
   salvarQuestoes,
@@ -26,9 +27,9 @@ const Upload = () => {
   // Extrai texto do PDF usando pdf.js
   const extrairTextoPDF = async (file: File): Promise<string> => {
     const pdfjsLib = await import("pdfjs-dist");
-    
-    // Configurar worker usando CDN
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+    // Configurar worker local (evita falhas de CDN e fake worker)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;

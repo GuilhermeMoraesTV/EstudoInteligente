@@ -41,7 +41,7 @@ export const gerarConteudoEstudo = async (texto: string): Promise<RespostaIA> =>
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.7,
@@ -124,7 +124,7 @@ export const gerarFeedbackDesempenho = async (
   }
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     generationConfig: {
       temperature: 0.5,
       maxOutputTokens: 512,

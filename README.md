@@ -1,8 +1,8 @@
-# StudyAgent — Gerador Inteligente de Questões e Flashcards
+# Estudo Inteligente — Gerador Inteligente de Questões e Flashcards
 
 ## 📖 Sobre
 
-O **StudyAgent** é uma aplicação web para estudantes de alto rendimento que se preparam para concursos públicos. O sistema atua como um agente educacional autônomo que:
+O **Estudo Inteligente** é uma aplicação web para estudantes de alto rendimento que se preparam para concursos públicos. O sistema atua como um agente educacional autônomo que:
 
 - Recebe textos ou PDFs de estudo
 - Gera automaticamente questões no estilo de concurso público (via Google Gemini 2.0 Flash)

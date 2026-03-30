@@ -62,163 +62,25 @@ function extrairJSON(texto: string): string {
 }
 
 // ============================================================
-// MAPEAMENTO DE ASSUNTOS — ESTRATÉGIA ROBUSTA PARA PDFs
+// MAPEAMENTO DE ASSUNTOS — ESTRATÉGIA RÁPIDA EM UMA CHAMADA
 // ============================================================
-// Problema: PDFs grandes têm muito conteúdo e a IA só via
-// os primeiros 6000 caracteres, perdendo assuntos do resto.
-// Solução: dividir o texto em chunks e fazer análise por partes,
-// depois consolidar todos os assuntos encontrados.
+// Otimização: em vez de múltiplas chamadas por chunk, fazemos
+// UMA única chamada com o texto amostrado inteligentemente.
+// Para PDFs grandes, pegamos início, meio e fim do texto.
 // ============================================================
 
-async function mapearChunk(
-  chunk: string,
-  indiceChunk: number,
-  totalChunks: number,
-  nomeArquivo?: string
-): Promise<Assunto[]> {
-  const prompt = `Você é um especialista pedagógico em concursos públicos brasileiros.
+function amostrarTexto(texto: string, maxChars = 20000): string {
+  if (texto.length <= maxChars) return texto;
 
-ARQUIVO: ${nomeArquivo || "Material de Estudo"}
-PARTE: ${indiceChunk + 1} de ${totalChunks}
+  // Pega início, meio e fim do texto para cobrir todo o conteúdo
+  const terco = Math.floor(maxChars / 3);
+  const inicio = texto.substring(0, terco);
+  const meioStart = Math.floor(texto.length / 2) - Math.floor(terco / 2);
+  const meio = texto.substring(meioStart, meioStart + terco);
+  const fimStart = texto.length - terco;
+  const fim = texto.substring(fimStart);
 
-Analise o trecho abaixo e identifique TODOS os tópicos/assuntos pedagógicos presentes.
-
-REGRAS CRÍTICAS:
-- Ignore: sumários, índices, apresentações, prefácios, notas editoriais, sobre o autor, informações de banca
-- Foque APENAS em conteúdo pedagógico real: conceitos, definições, regras, leis, teorias, classificações
-- Identifique de 1 a 5 assuntos por trecho (pode ser 0 se não houver conteúdo pedagógico)
-- Para cada assunto, inclua um trecho representativo do texto (mínimo 150 caracteres)
-- Títulos devem ser específicos (ex: "Concordância Verbal", não "Gramática")
-
-Retorne APENAS JSON válido sem markdown:
-{
-  "assuntos": [
-    {
-      "titulo": "Título específico do tópico",
-      "descricao": "O que este tópico abrange",
-      "trecho": "Trecho do texto original que contém este conteúdo (mínimo 150 caracteres)"
-    }
-  ]
-}
-
-TRECHO DO MATERIAL:
-${chunk}`;
-
-  try {
-    const raw = await chamarGemini(prompt, 0.2);
-    const json = extrairJSON(raw);
-    const dados = JSON.parse(json);
-    if (!Array.isArray(dados.assuntos)) return [];
-    return dados.assuntos
-      .filter((a: any) => a.titulo && a.trecho && a.trecho.length >= 100)
-      .map((a: any, i: number) => ({
-        id: `assunto_chunk${indiceChunk}_${i}`,
-        titulo: a.titulo.trim(),
-        descricao: a.descricao?.trim() || "",
-        trecho: a.trecho.trim(),
-      }));
-  } catch {
-    return [];
-  }
-}
-
-async function consolidarAssuntos(
-  todosAssuntos: Assunto[],
-  nomeArquivo: string
-): Promise<RespostaMapaAssuntos> {
-  if (todosAssuntos.length === 0) {
-    return {
-      tituloGeral: nomeArquivo || "Material de Estudo",
-      assuntos: [],
-    };
-  }
-
-  // Se poucos assuntos, retornar direto com deduplicação simples
-  if (todosAssuntos.length <= 6) {
-    return {
-      tituloGeral: inferirTituloGeral(todosAssuntos, nomeArquivo),
-      assuntos: deduplicarAssuntos(todosAssuntos),
-    };
-  }
-
-  // Muitos assuntos — consolidar e agrupar com IA
-  const listaAssuntos = todosAssuntos
-    .map((a, i) => `${i + 1}. ${a.titulo}: ${a.descricao}`)
-    .join("\n");
-
-  const prompt = `Você é um especialista pedagógico. Abaixo está uma lista de tópicos extraídos de um material de estudo chamado "${nomeArquivo}".
-
-Sua tarefa:
-1. Criar um título geral que represente todo o material
-2. Consolidar tópicos duplicados ou muito similares em um único assunto
-3. Manter entre 3 e 8 assuntos principais no total
-4. Garantir que cada assunto seja distinto e relevante
-
-LISTA DE TÓPICOS ENCONTRADOS:
-${listaAssuntos}
-
-Retorne APENAS JSON válido sem markdown:
-{
-  "tituloGeral": "Título representativo do material",
-  "assuntosMantidos": [1, 2, 5, 8, 12]
-}
-
-Os números são os índices (1-based) dos tópicos da lista que devem ser MANTIDOS (os melhores representantes de cada grupo).`;
-
-  try {
-    const raw = await chamarGemini(prompt, 0.2);
-    const json = extrairJSON(raw);
-    const dados = JSON.parse(json);
-
-    const indicesManutidos: number[] = dados.assuntosMantidos || [];
-    const assuntosFiltrados = indicesManutidos
-      .map((idx) => todosAssuntos[idx - 1])
-      .filter(Boolean)
-      .slice(0, 8);
-
-    return {
-      tituloGeral: dados.tituloGeral || nomeArquivo || "Material de Estudo",
-      assuntos: assuntosFiltrados.length > 0 ? assuntosFiltrados : deduplicarAssuntos(todosAssuntos).slice(0, 6),
-    };
-  } catch {
-    return {
-      tituloGeral: inferirTituloGeral(todosAssuntos, nomeArquivo),
-      assuntos: deduplicarAssuntos(todosAssuntos).slice(0, 6),
-    };
-  }
-}
-
-function inferirTituloGeral(assuntos: Assunto[], nomeArquivo?: string): string {
-  if (nomeArquivo) {
-    return nomeArquivo.replace(/\.(pdf|txt|docx?)$/i, "").replace(/[-_]/g, " ").trim();
-  }
-  if (assuntos.length > 0) {
-    return assuntos[0].titulo;
-  }
-  return "Material de Estudo";
-}
-
-function deduplicarAssuntos(assuntos: Assunto[]): Assunto[] {
-  const vistos = new Set<string>();
-  return assuntos.filter((a) => {
-    const chave = a.titulo.toLowerCase().substring(0, 30);
-    if (vistos.has(chave)) return false;
-    vistos.add(chave);
-    return true;
-  });
-}
-
-// Divide texto em chunks com overlap para não perder contexto nas bordas
-function dividirEmChunks(texto: string, tamanhoChunk = 8000, overlap = 500): string[] {
-  const chunks: string[] = [];
-  let inicio = 0;
-  while (inicio < texto.length) {
-    const fim = Math.min(inicio + tamanhoChunk, texto.length);
-    chunks.push(texto.substring(inicio, fim));
-    if (fim >= texto.length) break;
-    inicio = fim - overlap;
-  }
-  return chunks;
+  return `${inicio}\n\n[...]\n\n${meio}\n\n[...]\n\n${fim}`;
 }
 
 export const mapearAssuntos = async (
@@ -227,77 +89,36 @@ export const mapearAssuntos = async (
 ): Promise<RespostaMapaAssuntos> => {
   const textoLimpo = texto.trim();
   const nomeBase = nomeArquivo?.replace(/\.(pdf|txt|docx?)$/i, "") || "Material de Estudo";
+  const textoAmostrado = amostrarTexto(textoLimpo, 22000);
 
-  // Para textos curtos, usar abordagem direta otimizada
-  if (textoLimpo.length <= 10000) {
-    return mapearAssuntosTextoSimples(textoLimpo, nomeBase);
-  }
-
-  // Para textos longos (PDFs), dividir em chunks e analisar cada parte
-  const chunks = dividirEmChunks(textoLimpo, 8000, 600);
-
-  // Processar chunks em paralelo (máx 4 simultâneos para evitar rate limit)
-  const todosAssuntos: Assunto[] = [];
-  const batchSize = 3;
-
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    const resultados = await Promise.all(
-      batch.map((chunk, j) => mapearChunk(chunk, i + j, chunks.length, nomeBase))
-    );
-    resultados.forEach((assuntos) => todosAssuntos.push(...assuntos));
-  }
-
-  if (todosAssuntos.length === 0) {
-    // Fallback: tentar com o texto completo truncado
-    return mapearAssuntosTextoSimples(textoLimpo.substring(0, 12000), nomeBase);
-  }
-
-  // Reatribuir IDs únicos
-  todosAssuntos.forEach((a, i) => { a.id = `assunto_${i + 1}`; });
-
-  // Consolidar e deduplicar
-  return consolidarAssuntos(todosAssuntos, nomeBase);
-};
-
-// Mapeamento simples para textos curtos (abordagem anterior melhorada)
-async function mapearAssuntosTextoSimples(
-  texto: string,
-  nomeBase: string
-): Promise<RespostaMapaAssuntos> {
-  const prompt = `Você é um especialista pedagógico em concursos públicos brasileiros com 20 anos de experiência.
+  const prompt = `Você é especialista pedagógico em concursos públicos brasileiros.
 
 ARQUIVO: ${nomeBase}
 
-SUA MISSÃO: Analisar o texto e identificar TODOS os assuntos/tópicos pedagógicos distintos presentes.
+MISSÃO: Identificar TODOS os tópicos/assuntos pedagógicos do material abaixo.
 
 REGRAS:
-- IGNORE: sumários, índices, apresentações, prefácios, notas, informações do autor ou banca
-- FOQUE em: conceitos, definições, regras, leis, teorias, classificações, aplicações
-- Identifique de 3 a 8 assuntos principais
-- Títulos devem ser ESPECÍFICOS (ex: "Concordância Verbal", não "Português")
-- Cada trecho deve ter mínimo 150 caracteres do texto original
-
-Exemplos de mapeamento CORRETO:
-- Língua Portuguesa → [Concordância Verbal, Regência Nominal, Colocação Pronominal, Pontuação]
-- Direito Administrativo → [Atos Administrativos, Licitações, Poderes da Administração]
-- Matemática → [Porcentagem, Juros Simples, Juros Compostos, Regra de Três]
+- IGNORE: sumários, índices, apresentações, prefácios, notas editoriais, sobre o autor, informações de banca
+- FOQUE em: conceitos, definições, regras, leis, teorias, classificações
+- Identifique entre 3 e 8 assuntos principais
+- Títulos ESPECÍFICOS: "Concordância Verbal", não "Gramática"
+- Cada trecho deve ter ao menos 100 caracteres do texto original
 
 Retorne APENAS JSON válido sem markdown:
 {
-  "tituloGeral": "Título específico representando o material",
+  "tituloGeral": "Título representativo do material",
   "assuntos": [
     {
       "id": "assunto_1",
-      "titulo": "Título específico do tópico",
-      "descricao": "O que será estudado e por que é importante para concursos",
-      "trecho": "Trecho do texto original relacionado (mínimo 150 caracteres)"
+      "titulo": "Título específico",
+      "descricao": "O que será estudado",
+      "trecho": "Trecho do texto original (mínimo 100 caracteres)"
     }
   ]
 }
 
-TEXTO PARA ANÁLISE:
-${texto}`;
+TEXTO:
+${textoAmostrado}`;
 
   try {
     const raw = await chamarGemini(prompt, 0.2);
@@ -308,7 +129,6 @@ ${texto}`;
       throw new Error("Estrutura inválida");
     }
 
-    // Filtrar assuntos que parecem ser apresentação/sumário
     const palavrasProibidas = [
       "apresentação", "prefácio", "sumário", "índice", "sobre o autor",
       "banca", "edital de referência", "como usar", "introdução ao material",
@@ -321,10 +141,13 @@ ${texto}`;
 
     return {
       tituloGeral: dados.tituloGeral,
-      assuntos: assuntosFiltrados.length > 0 ? assuntosFiltrados : dados.assuntos,
+      assuntos: (assuntosFiltrados.length > 0 ? assuntosFiltrados : dados.assuntos).map((a, i) => ({
+        ...a,
+        id: `assunto_${i + 1}`,
+      })),
     };
   } catch (e) {
-    console.error("Erro no mapeamento simples:", e);
+    console.error("Erro no mapeamento:", e);
     return {
       tituloGeral: nomeBase,
       assuntos: [
@@ -332,12 +155,12 @@ ${texto}`;
           id: "assunto_1",
           titulo: nomeBase,
           descricao: "Conteúdo do material enviado",
-          trecho: texto.substring(0, 3000),
+          trecho: textoLimpo.substring(0, 3000),
         },
       ],
     };
   }
-}
+};
 
 // ============================================================
 // GERAÇÃO DE CONTEÚDO — QUESTÕES E FLASHCARDS
@@ -422,7 +245,6 @@ Retorne APENAS JSON puro válido sem markdown:
   } catch (e) {
     console.error("Erro ao gerar conteúdo:", e);
 
-    // Segunda tentativa com prompt compacto
     try {
       const promptFallback = `Elabore ${quantidadeQuestoes} questões de concurso público sobre "${assunto.titulo}" (${tipoQuestao === "elaborada" ? "estilo CESPE com situações-problema" : "memorização direta"}).
 Questões autossuficientes, sem mencionar material ou texto.

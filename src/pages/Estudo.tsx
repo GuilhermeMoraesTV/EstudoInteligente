@@ -11,7 +11,6 @@ import Navbar from "../components/Navbar";
 
 type TipoEstudo = "simples" | "elaborada";
 
-// ---- Remove markdown **bold** e *italic* do texto ----
 function limparMarkdown(texto: string): string {
   return texto
     .replace(/\*\*(.+?)\*\*/g, "$1")
@@ -21,7 +20,6 @@ function limparMarkdown(texto: string): string {
     .replace(/`(.+?)`/g, "$1");
 }
 
-// ---- Toast flutuante ----
 const ToastReforco = ({ visivel, mensagem, onClose }: { visivel: boolean; mensagem: string; onClose: () => void }) => {
   useEffect(() => {
     if (visivel) { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }
@@ -40,7 +38,6 @@ const ToastReforco = ({ visivel, mensagem, onClose }: { visivel: boolean; mensag
   );
 };
 
-// ---- Explicação formatada — converte template para seções visuais ----
 const ExplicacaoFormatada = ({ texto, tipo }: { texto: string; tipo: TipoEstudo }) => {
   if (!texto) return null;
   const limpo = limparMarkdown(texto);
@@ -91,7 +88,6 @@ const ExplicacaoFormatada = ({ texto, tipo }: { texto: string; tipo: TipoEstudo 
     );
   }
 
-  // Flash — mais compacto
   return (
     <div className="space-y-2">
       {partes.map((p, i) => {
@@ -119,7 +115,6 @@ const ExplicacaoFormatada = ({ texto, tipo }: { texto: string; tipo: TipoEstudo 
   );
 };
 
-// ---- Tela de seleção ----
 const SelecaoTipo = ({ assunto, material, onEscolher, assuntos, assuntoAtual, onTrocarAssunto }: {
   assunto: AssuntoSalvo; material: Material; onEscolher: (tipo: TipoEstudo) => void;
   assuntos: AssuntoSalvo[]; assuntoAtual: string; onTrocarAssunto: (id: string) => void;
@@ -147,10 +142,10 @@ const SelecaoTipo = ({ assunto, material, onEscolher, assuntos, assuntoAtual, on
         {assuntos.length > 1 && (
           <div className="mb-8 animate-fade-in-up" style={{ animationDelay: "100ms" }}>
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Outros assuntos</p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-2">
               {assuntos.map((a) => (
                 <button key={a.id} onClick={() => onTrocarAssunto(a.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${a.id === assuntoAtual ? "bg-violet-500/20 border-violet-500/50 text-violet-300" : "border-white/10 text-muted-foreground hover:border-violet-500/30 hover:text-white"}`}>
+                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-all border text-left ${a.id === assuntoAtual ? "bg-violet-500/20 border-violet-500/50 text-violet-300" : "border-white/10 text-muted-foreground hover:border-violet-500/30 hover:text-white"}`}>
                   {a.titulo}
                 </button>
               ))}
@@ -187,7 +182,6 @@ const SelecaoTipo = ({ assunto, material, onEscolher, assuntos, assuntoAtual, on
   );
 };
 
-// ---- Loading mínimo ----
 const LoadingQuestoes = ({ mensagem }: { mensagem: string }) => (
   <div className="min-h-screen bg-background flex items-center justify-center">
     <div className="fixed inset-0 grid-pattern opacity-20 pointer-events-none" />
@@ -201,7 +195,7 @@ const LoadingQuestoes = ({ mensagem }: { mensagem: string }) => (
   </div>
 );
 
-// ---- Option Button ----
+// ---- Option Button com visual de acerto/erro ----
 const OptionButton = ({ alternativa, index, respondida, selecionada, correta, onSelect }: {
   alternativa: string; index: number; respondida: boolean;
   selecionada: string | null; correta: string; onSelect: (alt: string) => void;
@@ -211,35 +205,87 @@ const OptionButton = ({ alternativa, index, respondida, selecionada, correta, on
   const isSelected = alternativa === selecionada;
   const isCorrect = alternativa === correta;
 
-  let statusClass = "";
-  let letterClass = "bg-white/10 text-white/60";
+  let letterBg = "bg-white/10 text-white/60";
   let borderClass = "border-white/10 hover:border-violet-500/40 hover:bg-white/5";
+  let rowBg = "";
+  let pulse = false;
 
   if (respondida) {
-    if (isCorrect) { statusClass = "bg-success/10"; borderClass = "border-success/40"; letterClass = "bg-success/20 text-success"; }
-    else if (isSelected) { statusClass = "bg-destructive/10"; borderClass = "border-destructive/40"; letterClass = "bg-destructive/20 text-destructive"; }
-    else { statusClass = "opacity-40"; borderClass = "border-white/5"; }
+    if (isCorrect) {
+      rowBg = "bg-success/10";
+      borderClass = "border-success/50";
+      letterBg = "bg-success/25 text-success";
+      pulse = true;
+    } else if (isSelected) {
+      rowBg = "bg-destructive/10";
+      borderClass = "border-destructive/40";
+      letterBg = "bg-destructive/20 text-destructive";
+    } else {
+      borderClass = "border-white/5 opacity-40";
+    }
   } else if (isSelected) {
-    borderClass = "border-violet-500/60 bg-violet-500/10"; letterClass = "bg-violet-500/30 text-violet-300";
+    borderClass = "border-violet-500/60 bg-violet-500/10";
+    letterBg = "bg-violet-500/30 text-violet-300";
   }
 
   const textoLimpo = limparMarkdown(alternativa);
 
   return (
-    <button onClick={() => !respondida && onSelect(alternativa)} disabled={respondida}
-      className={`question-option w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border transition-all text-left ${statusClass} ${borderClass} ${respondida ? "cursor-default" : ""} animate-fade-in-up opacity-0`}
-      style={{ animationDelay: `${index * 50}ms`, animationFillMode: "forwards" }}>
-      <span className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${letterClass}`}>{letter}</span>
-      <span className="text-sm leading-snug flex-1" style={{ color: respondida && isCorrect ? "#34d399" : respondida && isSelected ? "#f87171" : undefined }}>
+    <button
+      onClick={() => !respondida && onSelect(alternativa)}
+      disabled={respondida}
+      className={`question-option w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border transition-all text-left animate-fade-in-up opacity-0 ${rowBg} ${borderClass} ${respondida ? "cursor-default" : ""}`}
+      style={{ animationDelay: `${index * 50}ms`, animationFillMode: "forwards" }}
+    >
+      <span className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${letterBg} ${pulse ? "animate-pulse" : ""}`}>
+        {letter}
+      </span>
+      <span className="text-sm leading-snug flex-1" style={{
+        color: respondida && isCorrect ? "#34d399" : respondida && isSelected && !isCorrect ? "#f87171" : undefined,
+      }}>
         {textoLimpo}
       </span>
-      {respondida && isCorrect && <svg className="w-5 h-5 text-success shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>}
-      {respondida && isSelected && !isCorrect && <svg className="w-5 h-5 text-destructive shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>}
+
+      {/* Ícone visual de resultado */}
+      {respondida && isCorrect && (
+        <span className="shrink-0 flex items-center gap-1.5 text-success text-xs font-bold">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-success/20 border border-success/40">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+          {isSelected && <span className="hidden sm:inline">Correto!</span>}
+        </span>
+      )}
+      {respondida && isSelected && !isCorrect && (
+        <span className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-destructive/20 border border-destructive/40 text-destructive">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </span>
+      )}
     </button>
   );
 };
 
-// ---- Tela resultado ----
+// ---- Banner de acerto/erro imediato ----
+const ResultBanner = ({ acertou, visivel }: { acertou: boolean; visivel: boolean }) => {
+  if (!visivel) return null;
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-4 animate-scale-in ${acertou ? "bg-success/15 border border-success/30" : "bg-destructive/15 border border-destructive/30"}`}>
+      <span className="text-xl">{acertou ? "🎉" : "❌"}</span>
+      <div>
+        <p className={`text-sm font-bold ${acertou ? "text-success" : "text-destructive"}`}>
+          {acertou ? "Resposta Correta!" : "Resposta Incorreta"}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {acertou ? "Ótimo trabalho! Continue assim." : "Veja o gabarito comentado abaixo."}
+        </p>
+      </div>
+    </div>
+  );
+};
+
 const ResultScreen = ({ acertos, total, navigate, materialId, assuntoId }: {
   acertos: number; total: number; navigate: (p: string) => void; materialId: string; assuntoId: string;
 }) => {
@@ -281,9 +327,11 @@ const ResultScreen = ({ acertos, total, navigate, materialId, assuntoId }: {
             <p className="text-muted-foreground mt-2 text-sm">{taxa >= 70 ? "Excelente! 🎉" : taxa >= 40 ? "Bom progresso! 💪" : "Continue praticando! 🔥"}</p>
           </div>
           <div className="grid grid-cols-3 gap-4 w-full">
-            {[{ label: "Acertos", value: acertos, color: "#34d399", icon: "✅" },
+            {[
+              { label: "Acertos", value: acertos, color: "#34d399", icon: "✅" },
               { label: "Erros", value: total - acertos, color: "#f87171", icon: "❌" },
-              { label: "Total", value: total, color: "#a78bfa", icon: "📊" }].map((s, i) => (
+              { label: "Total", value: total, color: "#a78bfa", icon: "📊" },
+            ].map((s, i) => (
               <div key={s.label} className="glass rounded-2xl p-4 text-center animate-fade-in-up opacity-0"
                 style={{ animationDelay: `${i * 100}ms`, animationFillMode: "forwards", borderColor: `${s.color}20` }}>
                 <span className="text-xl">{s.icon}</span>
@@ -327,12 +375,12 @@ const Estudo = () => {
   const [material, setMaterial] = useState<Material | null>(null);
   const [assuntoAtual, setAssuntoAtual] = useState<AssuntoSalvo | null>(null);
   const [tipoEstudo, setTipoEstudo] = useState<TipoEstudo | null>(null);
-  // Questões carregam progressivamente
   const [questoes, setQuestoes] = useState<Questao[]>([]);
   const [carregandoMais, setCarregandoMais] = useState(false);
   const [indiceAtual, setIndiceAtual] = useState(0);
   const [respostaSelecionada, setRespostaSelecionada] = useState<string | null>(null);
   const [respondida, setRespondida] = useState(false);
+  const [acertouAtual, setAcertouAtual] = useState<boolean | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [gerandoPrimeiras, setGerandoPrimeiras] = useState(false);
   const [sessaoFinalizada, setSessaoFinalizada] = useState(false);
@@ -372,31 +420,25 @@ const Estudo = () => {
     setSessaoFinalizada(false);
     setIndiceAtual(0);
     setReforcoGerado(false);
+    setAcertouAtual(null);
   };
 
-  // Geração progressiva: mostra as primeiras 2 assim que chegam, resto em background
   const handleEscolherTipo = async (tipo: TipoEstudo) => {
     if (!usuario || !assuntoAtual || !materialId) return;
     setTipoEstudo(tipo);
     setGerandoPrimeiras(true);
 
     try {
-      // 1. Verificar questões salvas
       const salvas = await buscarQuestoesPorAssunto(usuario.uid, materialId, assuntoAtual.id);
       const doTipo = salvas.filter((q) => q.tipo === tipo);
 
       if (doTipo.length >= 3) {
-        // Usa questões já salvas — aparecem imediatamente
         setQuestoes(doTipo.sort(() => Math.random() - 0.5).slice(0, 5));
         setGerandoPrimeiras(false);
         return;
       }
 
-      // 2. Gerar novas — estratégia de streaming: pedir 2 primeiro, depois mais 3
-      // Pede 2 questões rápidas para exibir imediatamente
       const respostaRapida = await gerarConteudoParaAssunto(assuntoAtual, tipo, 2);
-
-      // Salva e exibe as primeiras 2
       const ids = await salvarQuestoes(usuario.uid, materialId, assuntoAtual.id, assuntoAtual.titulo, respostaRapida.questoes);
       const primeirasDuas: Questao[] = respostaRapida.questoes.map((q, i) => ({
         id: ids[i], userId: usuario.uid, materialId: materialId!,
@@ -409,17 +451,13 @@ const Estudo = () => {
       setQuestoes(primeirasDuas);
       setGerandoPrimeiras(false);
 
-      // 3. Gerar mais 3 em background (sem bloquear o usuário)
       setCarregandoMais(true);
       (async () => {
         try {
           const respostaExtra = await gerarConteudoParaAssunto(assuntoAtual, tipo, 3);
           const idsExtra = await salvarQuestoes(usuario.uid, materialId!, assuntoAtual.id, assuntoAtual.titulo, respostaExtra.questoes);
-
-          // Salvar flashcards também
           await salvarFlashcards(usuario.uid, materialId!, assuntoAtual.id, assuntoAtual.titulo,
             [...respostaRapida.flashcards, ...respostaExtra.flashcards], "gerado", material?.titulo);
-
           const questoesExtra: Questao[] = respostaExtra.questoes.map((q, i) => ({
             id: idsExtra[i], userId: usuario.uid, materialId: materialId!,
             assuntoId: assuntoAtual.id, assuntoTitulo: assuntoAtual.titulo,
@@ -427,9 +465,8 @@ const Estudo = () => {
             correta: q.correta, explicacao: q.explicacao,
             tipo: q.tipo || tipo, criadoEm: {} as any,
           }));
-
           setQuestoes((prev) => [...prev, ...questoesExtra]);
-        } catch { /* silent — as 2 primeiras já estão disponíveis */ }
+        } catch { /* silent */ }
         finally { setCarregandoMais(false); }
       })();
 
@@ -447,6 +484,7 @@ const Estudo = () => {
     const tempoGasto = Math.round((Date.now() - tempoInicio.current) / 1000);
     const questaoAtual = questoes[indiceAtual];
     const acertou = alternativa === questaoAtual.correta;
+    setAcertouAtual(acertou);
     if (acertou) setAcertos((p) => p + 1);
     setTotalRespondidas((p) => p + 1);
     setTimeout(() => setShowExplanation(true), 300);
@@ -487,6 +525,7 @@ const Estudo = () => {
       setRespondida(false);
       setShowExplanation(false);
       setReforcoGerado(false);
+      setAcertouAtual(null);
       tempoInicio.current = Date.now();
     } else {
       setSessaoFinalizada(true);
@@ -530,10 +569,8 @@ const Estudo = () => {
 
       <ToastReforco visivel={toastVisivel} mensagem={toastMsg} onClose={() => setToastVisivel(false)} />
 
-      {/* Layout mais horizontal — max-w-4xl em vez de max-w-2xl */}
-      <main className="relative mx-auto max-w-4xl px-4 pt-20 pb-16">
-
-        {/* Botão voltar + top bar */}
+      <main className="relative mx-auto max-w-2xl px-4 pt-20 pb-16">
+        {/* Top bar */}
         <div className="mb-4 animate-fade-in-down">
           <div className="flex items-center justify-between mb-3">
             <button onClick={() => navigate(`/estudos/${materialId}`)}
@@ -587,108 +624,76 @@ const Estudo = () => {
           </div>
         </div>
 
-        {/* Layout em duas colunas quando respondida (questão + explicação lado a lado) */}
-        {respondida && showExplanation ? (
-          <div className="grid lg:grid-cols-2 gap-5">
-            {/* Coluna esquerda: questão */}
-            <div>
-              <div className="glass-strong rounded-3xl p-6 mb-4 animate-scale-in" style={{ border: "1px solid rgba(139,92,246,0.15)" }}>
-                <div className="flex items-center justify-between mb-4">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-medium">
-                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-                    Questão {indiceAtual + 1}
-                  </span>
-                  {/* Botão Revisar */}
-                  <button onClick={handleGerarReforco} disabled={gerandoReforco || reforcoGerado}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                      reforcoGerado ? "border-success/30 bg-success/10 text-success cursor-default"
-                      : gerandoReforco ? "border-violet-500/20 bg-violet-500/8 text-violet-400/60 cursor-wait"
-                      : "border-yellow-500/25 bg-yellow-500/8 text-yellow-400 hover:bg-yellow-500/15 hover:border-yellow-500/50"
-                    }`}>
-                    {gerandoReforco ? (
-                      <><div className="w-3 h-3 rounded-full border border-violet-400/40 border-t-violet-400 animate-spin" /><span>Gerando...</span></>
-                    ) : reforcoGerado ? (
-                      <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg><span>Salvo!</span></>
-                    ) : (
-                      <><span>📌</span><span>Revisar</span></>
-                    )}
-                  </button>
-                </div>
-                <p className="text-sm leading-relaxed text-white/95 font-medium mb-5" style={{ lineHeight: "1.7" }}>
-                  {limparMarkdown(questaoAtual?.pergunta || "")}
-                </p>
-                <div className="space-y-2">
-                  {questaoAtual?.alternativas.map((alt, i) => (
-                    <OptionButton key={i} alternativa={alt} index={i}
-                      respondida={respondida} selecionada={respostaSelecionada}
-                      correta={questaoAtual.correta} onSelect={handleResponder} />
-                  ))}
-                </div>
-              </div>
-
-              {/* Botão próxima */}
-              <button onClick={handleProxima}
-                className="btn-primary w-full rounded-2xl py-3.5 text-sm font-bold text-white animate-fade-in-up"
-                style={{ fontFamily: "Syne, sans-serif" }}>
-                {indiceAtual < questoes.length - 1 ? (
-                  <span className="flex items-center justify-center gap-2">
-                    Próxima questão
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                  </span>
-                ) : (
-                  <span>🏁 Ver Resultado</span>
-                )}
-              </button>
-            </div>
-
-            {/* Coluna direita: explicação */}
-            <div className="glass rounded-2xl p-5 animate-fade-in-up border border-violet-500/15 h-fit">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-6 h-6 rounded-lg bg-violet-500/20 flex items-center justify-center text-xs">💡</div>
-                <span className="text-xs font-semibold text-violet-400 uppercase tracking-wider">
-                  {tipoEstudo === "elaborada" ? "Gabarito Comentado" : "Explicação"}
-                </span>
-              </div>
-              <ExplicacaoFormatada texto={questaoAtual?.explicacao || ""} tipo={tipoEstudo} />
-            </div>
+        {/* Card da questão */}
+        <div key={`${assuntoAtual.id}-${indiceAtual}`} className="glass-strong rounded-3xl p-6 mb-5 animate-scale-in" style={{ border: "1px solid rgba(139,92,246,0.15)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+              {assuntoAtual.titulo} · Q{indiceAtual + 1}
+            </span>
+            <button onClick={handleGerarReforco} disabled={gerandoReforco || reforcoGerado}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                reforcoGerado ? "border-success/30 bg-success/10 text-success cursor-default"
+                : gerandoReforco ? "border-violet-500/20 bg-violet-500/8 text-violet-400/60 cursor-wait"
+                : "border-yellow-500/25 bg-yellow-500/8 text-yellow-400 hover:bg-yellow-500/15 hover:border-yellow-500/50"
+              }`}>
+              {gerandoReforco ? (
+                <><div className="w-3 h-3 rounded-full border border-violet-400/40 border-t-violet-400 animate-spin" /><span>Gerando...</span></>
+              ) : reforcoGerado ? (
+                <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg><span>Salvo!</span></>
+              ) : (
+                <><span>📌</span><span>Revisar</span></>
+              )}
+            </button>
           </div>
-        ) : (
-          /* Modo normal — questão centralizada */
-          <div>
-            <div key={`${assuntoAtual.id}-${indiceAtual}`} className="glass-strong rounded-3xl p-7 mb-5 animate-scale-in" style={{ border: "1px solid rgba(139,92,246,0.15)" }}>
-              <div className="flex items-center justify-between mb-4">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-                  {assuntoAtual.titulo} · Questão {indiceAtual + 1}
+
+          <h2 className="text-base leading-relaxed text-white/95 font-medium mb-6" style={{ lineHeight: "1.7" }}>
+            {limparMarkdown(questaoAtual?.pergunta || "")}
+          </h2>
+
+          <div className="space-y-2.5">
+            {questaoAtual?.alternativas.map((alt, i) => (
+              <OptionButton key={i} alternativa={alt} index={i}
+                respondida={respondida} selecionada={respostaSelecionada}
+                correta={questaoAtual.correta} onSelect={handleResponder} />
+            ))}
+          </div>
+        </div>
+
+        {/* Banner de resultado + Gabarito comentado ABAIXO do card */}
+        {respondida && (
+          <div className="animate-fade-in-up space-y-4">
+            {/* Banner visual de acerto/erro */}
+            <ResultBanner acertou={acertouAtual!} visivel={true} />
+
+            {/* Gabarito comentado */}
+            {showExplanation && (
+              <div className="glass rounded-2xl p-5 border border-violet-500/15">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-6 h-6 rounded-lg bg-violet-500/20 flex items-center justify-center text-xs">💡</div>
+                  <span className="text-xs font-semibold text-violet-400 uppercase tracking-wider">
+                    {tipoEstudo === "elaborada" ? "Gabarito Comentado" : "Explicação"}
+                  </span>
+                </div>
+                <ExplicacaoFormatada texto={questaoAtual?.explicacao || ""} tipo={tipoEstudo} />
+              </div>
+            )}
+
+            {/* Botão próxima */}
+            <button onClick={handleProxima}
+              className="btn-primary w-full rounded-2xl py-3.5 text-sm font-bold text-white"
+              style={{ fontFamily: "Syne, sans-serif" }}>
+              {indiceAtual < questoes.length - 1 ? (
+                <span className="flex items-center justify-center gap-2">
+                  Próxima questão
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
                 </span>
-                <button onClick={handleGerarReforco} disabled={gerandoReforco || reforcoGerado}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                    reforcoGerado ? "border-success/30 bg-success/10 text-success cursor-default"
-                    : gerandoReforco ? "border-violet-500/20 bg-violet-500/8 text-violet-400/60 cursor-wait"
-                    : "border-yellow-500/25 bg-yellow-500/8 text-yellow-400 hover:bg-yellow-500/15 hover:border-yellow-500/50"
-                  }`}>
-                  {gerandoReforco ? (
-                    <><div className="w-3 h-3 rounded-full border border-violet-400/40 border-t-violet-400 animate-spin" /><span>Gerando...</span></>
-                  ) : reforcoGerado ? (
-                    <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg><span>Salvo!</span></>
-                  ) : (
-                    <><span>📌</span><span>Revisar</span></>
-                  )}
-                </button>
-              </div>
-              <h2 className="text-base leading-relaxed text-white/95 font-medium mb-6" style={{ lineHeight: "1.7" }}>
-                {limparMarkdown(questaoAtual?.pergunta || "")}
-              </h2>
-              <div className="space-y-2.5">
-                {questaoAtual?.alternativas.map((alt, i) => (
-                  <OptionButton key={i} alternativa={alt} index={i}
-                    respondida={respondida} selecionada={respostaSelecionada}
-                    correta={questaoAtual.correta} onSelect={handleResponder} />
-                ))}
-              </div>
-            </div>
+              ) : (
+                <span>🏁 Ver Resultado</span>
+              )}
+            </button>
           </div>
         )}
       </main>

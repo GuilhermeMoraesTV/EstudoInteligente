@@ -46,7 +46,7 @@ const Navbar = () => {
               <span className="absolute inset-0 flex items-center justify-center text-white font-bold text-sm" style={{ fontFamily: "Syne,sans-serif" }}>S</span>
             </div>
             <span className="text-lg font-bold tracking-tight text-gradient" style={{ fontFamily: "Syne, sans-serif" }}>
-              StudyAgent
+              Estudo Inteligente
             </span>
           </button>
 

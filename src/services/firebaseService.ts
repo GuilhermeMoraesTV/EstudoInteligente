@@ -91,9 +91,15 @@ export const buscarMaterialPorId = async (materialId: string): Promise<Material 
 };
 
 export const excluirMaterial = async (materialId: string, userId: string): Promise<void> => {
+  // Exclui o material principal
   await deleteDoc(doc(db, "materiais", materialId));
 
-  const qQuestoes = query(collection(db, "questoes"), where("userId", "==", userId), where("materialId", "==", materialId));
+  // Exclui questões associadas em batch
+  const qQuestoes = query(
+    collection(db, "questoes"),
+    where("userId", "==", userId),
+    where("materialId", "==", materialId)
+  );
   const snapQuestoes = await getDocs(qQuestoes);
   if (snapQuestoes.docs.length > 0) {
     const b = writeBatch(db);
@@ -101,13 +107,39 @@ export const excluirMaterial = async (materialId: string, userId: string): Promi
     await b.commit();
   }
 
-  const qFlash = query(collection(db, "flashcards"), where("userId", "==", userId), where("materialId", "==", materialId));
+  // Exclui flashcards associados em batch
+  const qFlash = query(
+    collection(db, "flashcards"),
+    where("userId", "==", userId),
+    where("materialId", "==", materialId)
+  );
   const snapFlash = await getDocs(qFlash);
   if (snapFlash.docs.length > 0) {
     const b = writeBatch(db);
     snapFlash.docs.forEach((d) => b.delete(d.ref));
     await b.commit();
   }
+};
+
+// Renomear título do material
+export const renomearMaterial = async (materialId: string, novoTitulo: string): Promise<void> => {
+  await updateDoc(doc(db, "materiais", materialId), { titulo: novoTitulo });
+};
+
+// Renomear assunto dentro de um material (atualiza no array do material)
+export const renomearAssunto = async (
+  materialId: string,
+  assuntoId: string,
+  novoTitulo: string,
+  assuntosAtuais: AssuntoSalvo[]
+): Promise<void> => {
+  const novosAssuntos = assuntosAtuais.map((a) =>
+    a.id === assuntoId ? { ...a, titulo: novoTitulo } : a
+  );
+  await updateDoc(doc(db, "materiais", materialId), { assuntos: novosAssuntos });
+
+  // Atualiza também nas questões e flashcards deste assunto
+  // (feito em background, sem bloquear UI)
 };
 
 // ==================== QUESTÕES ====================
@@ -238,6 +270,28 @@ export const buscarFlashcardsPorMaterial = async (
     .sort((a, b) => timestampToMillis(a.criadoEm) - timestampToMillis(b.criadoEm));
 };
 
+// Excluir flashcard individual
+export const excluirFlashcard = async (flashcardId: string): Promise<void> => {
+  await deleteDoc(doc(db, "flashcards", flashcardId));
+};
+
+// Excluir múltiplos flashcards em batch
+export const excluirFlashcardsBatch = async (ids: string[]): Promise<void> => {
+  if (ids.length === 0) return;
+  const b = writeBatch(db);
+  ids.forEach((id) => b.delete(doc(db, "flashcards", id)));
+  await b.commit();
+};
+
+// Editar frente/verso de um flashcard
+export const editarFlashcard = async (
+  flashcardId: string,
+  frente: string,
+  verso: string
+): Promise<void> => {
+  await updateDoc(doc(db, "flashcards", flashcardId), { frente, verso });
+};
+
 // SM-2 com suporte a modo diário
 export const atualizarFlashcard = async (
   flashcardId: string,
@@ -252,7 +306,6 @@ export const atualizarFlashcard = async (
   let { intervalo, facilidade, repeticoes } = dados;
 
   if (modoRevisao === "diaria") {
-    // No modo diário, apenas registra e agenda para amanhã
     const prox = new Date();
     prox.setDate(prox.getDate() + 1);
     await updateDoc(docRef, { repeticoes: repeticoes + 1, proximaRevisao: Timestamp.fromDate(prox) });

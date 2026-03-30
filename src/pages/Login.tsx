@@ -89,7 +89,7 @@ const Login = () => {
             className="text-3xl font-bold text-gradient"
             style={{ fontFamily: "Syne, sans-serif" }}
           >
-            StudyAgent
+            Estudo Inteligente
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Gerador inteligente de questões e flashcards

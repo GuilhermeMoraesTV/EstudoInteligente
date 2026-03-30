@@ -1,8 +1,73 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { buscarMateriaisDoUsuario, excluirMaterial, Material } from "../services/firebaseService";
+import {
+  buscarMateriaisDoUsuario,
+  excluirMaterial,
+  renomearMaterial,
+  Material,
+} from "../services/firebaseService";
 import Navbar from "../components/Navbar";
+
+// ---- Inline edit para título do material ----
+const EditableTitle = ({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (novo: string) => Promise<void>;
+}) => {
+  const [editando, setEditando] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [salvando, setSalvando] = useState(false);
+
+  const handleSave = async () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === value) { setEditando(false); setDraft(value); return; }
+    setSalvando(true);
+    try { await onSave(trimmed); }
+    finally { setSalvando(false); setEditando(false); }
+  };
+
+  if (editando) {
+    return (
+      <div className="flex items-center gap-2 flex-1" onClick={(e) => e.stopPropagation()}>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") { setEditando(false); setDraft(value); } }}
+          className="bg-white/10 border border-violet-500/50 rounded-lg px-3 py-1 text-white text-sm outline-none focus:border-violet-400 flex-1"
+        />
+        <button onClick={handleSave} disabled={salvando}
+          className="w-7 h-7 flex items-center justify-center rounded-lg bg-success/20 text-success hover:bg-success/30 transition-all text-xs">
+          {salvando ? "…" : "✓"}
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); setEditando(false); setDraft(value); }}
+          className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 text-muted-foreground hover:bg-white/10 transition-all text-xs">
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 group/title flex-1 min-w-0">
+      <span className="font-bold text-white text-sm leading-tight truncate" style={{ fontFamily: "Syne, sans-serif" }}>
+        {value}
+      </span>
+      <button
+        onClick={(e) => { e.stopPropagation(); setDraft(value); setEditando(true); }}
+        className="shrink-0 opacity-0 group-hover/title:opacity-100 transition-opacity w-5 h-5 flex items-center justify-center rounded-md hover:bg-white/10 text-muted-foreground hover:text-violet-400"
+        title="Renomear"
+      >
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+        </svg>
+      </button>
+    </div>
+  );
+};
 
 const Estudos = () => {
   const { usuario } = useAuth();
@@ -12,6 +77,7 @@ const Estudos = () => {
   const [visible, setVisible] = useState(false);
   const [excluindo, setExcluindo] = useState<string | null>(null);
   const [confirmarExclusao, setConfirmarExclusao] = useState<string | null>(null);
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null);
 
   useEffect(() => {
     if (!usuario) return;
@@ -34,8 +100,17 @@ const Estudos = () => {
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
   };
 
+  const handleRenomear = async (materialId: string, novoTitulo: string) => {
+    await renomearMaterial(materialId, novoTitulo);
+    setMateriais((prev) =>
+      prev.map((m) => m.id === materialId ? { ...m, titulo: novoTitulo } : m)
+    );
+  };
+
   const handleExcluir = async (materialId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    setErroExclusao(null);
+
     if (confirmarExclusao === materialId) {
       setExcluindo(materialId);
       setConfirmarExclusao(null);
@@ -44,12 +119,13 @@ const Estudos = () => {
         setMateriais((prev) => prev.filter((m) => m.id !== materialId));
       } catch (err) {
         console.error("Erro ao excluir material:", err);
+        setErroExclusao("Erro ao excluir. Verifique as permissões do Firebase.");
       } finally {
         setExcluindo(null);
       }
     } else {
       setConfirmarExclusao(materialId);
-      setTimeout(() => setConfirmarExclusao((cur) => (cur === materialId ? null : cur)), 3000);
+      setTimeout(() => setConfirmarExclusao((cur) => (cur === materialId ? null : cur)), 3500);
     }
   };
 
@@ -100,6 +176,14 @@ const Estudos = () => {
           </p>
         </div>
 
+        {/* Erro de exclusão */}
+        {erroExclusao && (
+          <div className="mb-4 flex items-center gap-2 bg-destructive/10 border border-destructive/30 rounded-xl px-4 py-3 animate-scale-in">
+            <span className="text-destructive text-sm">⚠️ {erroExclusao}</span>
+            <button onClick={() => setErroExclusao(null)} className="ml-auto text-muted-foreground hover:text-white text-xs">✕</button>
+          </div>
+        )}
+
         {/* Empty state */}
         {materiais.length === 0 && (
           <div className={`transition-all duration-700 delay-200 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
@@ -144,17 +228,18 @@ const Estudos = () => {
                 <div className="relative p-6">
                   {/* Header */}
                   <div className="flex items-start justify-between gap-3 mb-4">
-                    <div
-                      className="flex items-center gap-3 flex-1 cursor-pointer"
-                      onClick={() => navigate(`/estudos/${material.id}`)}
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600/30 to-indigo-500/20 border border-violet-500/20 flex items-center justify-center text-lg shrink-0">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div
+                        className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600/30 to-indigo-500/20 border border-violet-500/20 flex items-center justify-center text-lg shrink-0 cursor-pointer"
+                        onClick={() => navigate(`/estudos/${material.id}`)}
+                      >
                         📖
                       </div>
-                      <div>
-                        <h3 className="font-bold text-white text-sm leading-tight" style={{ fontFamily: "Syne, sans-serif" }}>
-                          {material.titulo}
-                        </h3>
+                      <div className="flex-1 min-w-0">
+                        <EditableTitle
+                          value={material.titulo}
+                          onSave={(novo) => handleRenomear(material.id!, novo)}
+                        />
                         <p className="text-[11px] text-muted-foreground mt-0.5">
                           {formatarData(material.criadoEm)}
                         </p>
@@ -167,10 +252,10 @@ const Estudos = () => {
                       disabled={excluindo === material.id}
                       className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
                         confirmarExclusao === material.id
-                          ? "bg-red-500/20 border border-red-500/50 text-red-400"
+                          ? "bg-red-500/20 border border-red-500/50 text-red-400 opacity-100"
                           : "opacity-0 group-hover:opacity-100 bg-white/5 border border-white/10 text-muted-foreground hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400"
                       }`}
-                      title={confirmarExclusao === material.id ? "Clique para confirmar exclusão" : "Excluir material"}
+                      title={confirmarExclusao === material.id ? "Clique para confirmar" : "Excluir material"}
                     >
                       {excluindo === material.id ? (
                         <div className="w-3 h-3 rounded-full border border-red-400/50 border-t-red-400 animate-spin" />

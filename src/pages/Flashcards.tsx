@@ -8,11 +8,14 @@ import {
   registrarResposta,
   buscarPerfilUsuario,
   atualizarModoRevisao,
+  excluirFlashcard,
+  editarFlashcard,
   Flashcard,
 } from "../services/firebaseService";
 import Navbar from "../components/Navbar";
 
 type ModoRevisao = "espacada" | "diaria";
+type OrdemGrupo = "pendentes" | "alfabetica";
 
 interface GrupoAssunto {
   chave: string;
@@ -53,7 +56,7 @@ const CompleteState = ({ revisados, navigate }: { revisados: number; navigate: (
         <h2 className="text-3xl font-bold text-gradient" style={{ fontFamily: "Syne, sans-serif" }}>Revisão Concluída!</h2>
         <p className="mt-3 text-muted-foreground">Você revisou <span className="text-success font-bold">{revisados}</span> flashcard{revisados !== 1 ? "s" : ""}.</p>
       </div>
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-wrap justify-center">
         <button onClick={() => navigate("/estudos")} className="glass px-5 py-3 rounded-2xl text-sm font-semibold text-white border border-white/10 hover:bg-white/5 transition-all">← Estudos</button>
         <button onClick={() => window.location.reload()} className="btn-primary px-5 py-3 rounded-2xl text-sm font-bold text-white">🔄 Nova Sessão</button>
       </div>
@@ -66,16 +69,16 @@ const RatingButton = ({ label, icon, color, glow, onClick, delay }: {
   label: string; icon: string; color: string; glow: string; onClick: () => void; delay: number;
 }) => (
   <button onClick={onClick}
-    className="flex-1 flex flex-col items-center gap-2 py-4 rounded-2xl border transition-all duration-200 hover:scale-105 active:scale-95 animate-fade-in-up opacity-0"
+    className="flex-1 flex flex-col items-center gap-1.5 py-3 sm:py-4 rounded-2xl border transition-all duration-200 hover:scale-105 active:scale-95 animate-fade-in-up opacity-0"
     style={{ animationDelay: `${delay}ms`, animationFillMode: "forwards", borderColor: `${color}30`, background: `${color}08` }}
     onMouseEnter={(e) => (e.currentTarget.style.boxShadow = `0 0 20px ${glow}`)}
     onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "")}>
-    <span className="text-2xl">{icon}</span>
+    <span className="text-xl sm:text-2xl">{icon}</span>
     <span className="text-xs font-semibold" style={{ color }}>{label}</span>
   </button>
 );
 
-// ---- FlashcardSession — flip com transform inline confiável ----
+// ---- FlashcardSession ----
 const FlashcardSession = ({
   cards, grupo, onVoltar, modoRevisao,
 }: {
@@ -92,12 +95,18 @@ const FlashcardSession = ({
   const [processando, setProcessando] = useState(false);
   const [concluido, setConcluido] = useState(false);
   const [opacity, setOpacity] = useState(1);
+  // Edição inline
+  const [editando, setEditando] = useState(false);
+  const [draftFrente, setDraftFrente] = useState("");
+  const [draftVerso, setDraftVerso] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [cardsLocais, setCardsLocais] = useState<Flashcard[]>(cards);
 
-  const flashcardAtual = cards[indiceAtual];
+  const flashcardAtual = cardsLocais[indiceAtual];
 
   const handleFlip = useCallback(() => {
-    if (!processando) setFlipped((p) => !p);
-  }, [processando]);
+    if (!processando && !editando) setFlipped((p) => !p);
+  }, [processando, editando]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -117,13 +126,12 @@ const FlashcardSession = ({
     } catch { /* silent */ }
 
     setRevisados((p) => p + 1);
-
-    // Fade out, troca card, fade in
     setOpacity(0);
     setTimeout(() => {
       setFlipped(false);
+      setEditando(false);
       setTimeout(() => {
-        if (indiceAtual < cards.length - 1) {
+        if (indiceAtual < cardsLocais.length - 1) {
           setIndiceAtual((p) => p + 1);
           setOpacity(1);
           setProcessando(false);
@@ -134,34 +142,52 @@ const FlashcardSession = ({
     }, 200);
   };
 
+  const abrirEdicao = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDraftFrente(flashcardAtual.frente);
+    setDraftVerso(flashcardAtual.verso);
+    setEditando(true);
+  };
+
+  const handleSalvarEdicao = async () => {
+    if (!flashcardAtual?.id) return;
+    setSalvando(true);
+    try {
+      await editarFlashcard(flashcardAtual.id, draftFrente.trim(), draftVerso.trim());
+      setCardsLocais((prev) => prev.map((c, i) =>
+        i === indiceAtual ? { ...c, frente: draftFrente.trim(), verso: draftVerso.trim() } : c
+      ));
+      setEditando(false);
+    } finally { setSalvando(false); }
+  };
+
   if (concluido) return <CompleteState revisados={revisados} navigate={navigate} />;
 
-  const progPercent = (indiceAtual / cards.length) * 100;
+  const progPercent = (indiceAtual / cardsLocais.length) * 100;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="fixed inset-0 grid-pattern opacity-15 pointer-events-none" />
       <Navbar />
-      <main className="relative mx-auto max-w-xl px-4 pt-24 pb-16">
+      <main className="relative mx-auto max-w-xl px-4 pt-20 sm:pt-24 pb-16">
         {/* Header */}
-        <div className="mb-6 animate-fade-in-down">
+        <div className="mb-5 animate-fade-in-down">
           <button onClick={onVoltar} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors mb-4">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            <span className="truncate max-w-[180px]">{grupo.assuntoTitulo}</span>
-            {grupo.materialTitulo && <span className="text-muted-foreground/50 hidden sm:inline">· {grupo.materialTitulo}</span>}
+            <span className="truncate max-w-[160px]">{grupo.assuntoTitulo}</span>
           </button>
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
             <div className="flex items-center gap-2">
-              <span className="glass rounded-lg px-3 py-1 font-mono font-bold text-violet-400">{indiceAtual + 1}/{cards.length}</span>
+              <span className="glass rounded-lg px-3 py-1 font-mono font-bold text-violet-400">{indiceAtual + 1}/{cardsLocais.length}</span>
               <span className={`px-2 py-0.5 rounded-md text-[10px] border ${modoRevisao === "espacada" ? "bg-violet-500/10 border-violet-500/20 text-violet-400" : "bg-blue-500/10 border-blue-500/20 text-blue-400"}`}>
                 {modoRevisao === "espacada" ? "🧠 SM-2" : "📅 Diária"}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span>{revisados} revisados</span>
-              <kbd className="glass rounded px-2 py-0.5 text-[10px]">SPACE</kbd>
+              <span className="hidden sm:inline">{revisados} revisados</span>
+              <kbd className="glass rounded px-2 py-0.5 text-[10px] hidden sm:inline">SPACE</kbd>
             </div>
           </div>
           <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
@@ -176,103 +202,161 @@ const FlashcardSession = ({
           </div>
         )}
 
-        {/* Card com flip — usando transform inline para máxima confiabilidade */}
-        <div
-          className="relative cursor-pointer"
-          style={{ height: "300px", perspective: "1400px" }}
-          onClick={handleFlip}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              transformStyle: "preserve-3d",
-              transition: "transform 0.65s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease",
-              transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
-              opacity,
-            }}
-          >
-            {/* FRENTE */}
+        {/* Modo edição */}
+        {editando ? (
+          <div className="glass-strong rounded-3xl p-5 mb-4 space-y-4 animate-scale-in" style={{ border: "1px solid rgba(139,92,246,0.2)" }}>
+            <h3 className="text-sm font-bold text-white">Editar Flashcard</h3>
+            <div>
+              <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">Pergunta</label>
+              <textarea
+                value={draftFrente}
+                onChange={(e) => setDraftFrente(e.target.value)}
+                rows={3}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-violet-500/60 resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-success uppercase tracking-wider mb-2">Resposta</label>
+              <textarea
+                value={draftVerso}
+                onChange={(e) => setDraftVerso(e.target.value)}
+                rows={3}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-success/60 resize-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setEditando(false)}
+                className="flex-1 glass rounded-xl py-2.5 text-sm text-muted-foreground border border-white/10 hover:bg-white/5">
+                Cancelar
+              </button>
+              <button onClick={handleSalvarEdicao} disabled={salvando}
+                className="flex-1 btn-primary rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50">
+                {salvando ? "Salvando…" : "✓ Salvar"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Card com flip — transform inline para máxima confiabilidade */}
             <div
-              style={{
-                position: "absolute", inset: 0,
-                backfaceVisibility: "hidden",
-                WebkitBackfaceVisibility: "hidden",
-                borderRadius: "1.25rem",
-                border: "1px solid rgba(139,92,246,0.2)",
-                background: "rgba(20,18,40,0.85)",
-                backdropFilter: "blur(20px)",
-                display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center",
-                padding: "2rem", textAlign: "center",
-              }}
+              className="relative cursor-pointer"
+              style={{ height: "260px", perspective: "1400px" }}
+              onClick={handleFlip}
             >
-              <div className="mb-4">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-                  {flashcardAtual?.assuntoTitulo}
-                </span>
-              </div>
-              <p className="text-lg text-white font-medium leading-relaxed">{flashcardAtual?.frente}</p>
-              {!flipped && (
-                <div className="absolute bottom-5 left-0 right-0 flex justify-center">
-                  <span className="text-xs text-muted-foreground flex items-center gap-1.5 animate-float">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                    </svg>
-                    Clique para revelar
-                  </span>
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  transformStyle: "preserve-3d",
+                  transition: "transform 0.65s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease",
+                  transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                  opacity,
+                }}
+              >
+                {/* FRENTE */}
+                <div
+                  style={{
+                    position: "absolute", inset: 0,
+                    backfaceVisibility: "hidden",
+                    WebkitBackfaceVisibility: "hidden",
+                    borderRadius: "1.25rem",
+                    border: "1px solid rgba(139,92,246,0.2)",
+                    background: "rgba(20,18,40,0.85)",
+                    backdropFilter: "blur(20px)",
+                    display: "flex", flexDirection: "column",
+                    padding: "1.5rem",
+                    overflowY: "auto",
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                      {flashcardAtual?.assuntoTitulo}
+                    </span>
+                    <button
+                      onClick={abrirEdicao}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-violet-400 hover:bg-violet-500/10 transition-all"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </div>
+                  {/* Texto scrollável em mobile */}
+                  <div className="flex-1 overflow-y-auto">
+                    <p className="text-base sm:text-lg text-white font-medium leading-relaxed">{flashcardAtual?.frente}</p>
+                  </div>
+                  {!flipped && (
+                    <div className="flex justify-center mt-3 flex-shrink-0">
+                      <span className="text-xs text-muted-foreground flex items-center gap-1.5 animate-float">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                        </svg>
+                        Toque para revelar
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* VERSO */}
-            <div
-              style={{
-                position: "absolute", inset: 0,
-                backfaceVisibility: "hidden",
-                WebkitBackfaceVisibility: "hidden",
-                transform: "rotateY(180deg)",
-                borderRadius: "1.25rem",
-                border: "1px solid rgba(52,211,153,0.25)",
-                background: "linear-gradient(135deg, rgba(52,211,153,0.08), rgba(16,185,129,0.04))",
-                backdropFilter: "blur(20px)",
-                display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center",
-                padding: "2rem", textAlign: "center",
-              }}
-            >
-              <div className="mb-4">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success/15 border border-success/25 text-success text-xs font-medium">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Resposta
-                </span>
+                {/* VERSO */}
+                <div
+                  style={{
+                    position: "absolute", inset: 0,
+                    backfaceVisibility: "hidden",
+                    WebkitBackfaceVisibility: "hidden",
+                    transform: "rotateY(180deg)",
+                    borderRadius: "1.25rem",
+                    border: "1px solid rgba(52,211,153,0.25)",
+                    background: "linear-gradient(135deg, rgba(52,211,153,0.08), rgba(16,185,129,0.04))",
+                    backdropFilter: "blur(20px)",
+                    display: "flex", flexDirection: "column",
+                    padding: "1.5rem",
+                    overflowY: "auto",
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success/15 border border-success/25 text-success text-xs font-medium">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Resposta
+                    </span>
+                    <button
+                      onClick={abrirEdicao}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-all"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    <p className="text-base text-white font-medium leading-relaxed">{flashcardAtual?.verso}</p>
+                  </div>
+                </div>
               </div>
-              <p className="text-base text-white font-medium leading-relaxed">{flashcardAtual?.verso}</p>
             </div>
-          </div>
-        </div>
 
-        {/* Dots */}
-        <div className="flex justify-center gap-1 mt-4 mb-6">
-          {Array.from({ length: Math.min(cards.length, 7) }, (_, i) => (
-            <div key={i} className="h-1 rounded-full transition-all duration-300"
-              style={{ width: i === Math.min(indiceAtual, 6) ? "20px" : "6px", background: i === Math.min(indiceAtual, 6) ? "#a78bfa" : "rgba(255,255,255,0.15)" }} />
-          ))}
-        </div>
+            {/* Dots */}
+            <div className="flex justify-center gap-1 mt-4 mb-5">
+              {Array.from({ length: Math.min(cardsLocais.length, 7) }, (_, i) => (
+                <div key={i} className="h-1 rounded-full transition-all duration-300"
+                  style={{ width: i === Math.min(indiceAtual, 6) ? "20px" : "6px", background: i === Math.min(indiceAtual, 6) ? "#a78bfa" : "rgba(255,255,255,0.15)" }} />
+              ))}
+            </div>
 
-        {/* Rating — só aparece quando virado */}
-        <div className={`transition-all duration-400 ${flipped ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
-          <p className="text-center text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wider">Como foi?</p>
-          <div className="flex gap-3">
-            <RatingButton label="Errei" icon="😬" color="#f87171" glow="rgba(248,113,113,0.3)" onClick={() => handleAvaliacao(0)} delay={0} />
-            <RatingButton label="Difícil" icon="😅" color="#fbbf24" glow="rgba(251,191,36,0.3)" onClick={() => handleAvaliacao(1)} delay={50} />
-            <RatingButton label="Fácil" icon="😎" color="#34d399" glow="rgba(52,211,153,0.3)" onClick={() => handleAvaliacao(2)} delay={100} />
-          </div>
-        </div>
-        {!flipped && <p className="text-center text-xs text-muted-foreground mt-4">Pense na resposta antes de virar o card</p>}
+            {/* Rating */}
+            <div className={`transition-all duration-400 ${flipped ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
+              <p className="text-center text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wider">Como foi?</p>
+              <div className="flex gap-2 sm:gap-3">
+                <RatingButton label="Errei" icon="😬" color="#f87171" glow="rgba(248,113,113,0.3)" onClick={() => handleAvaliacao(0)} delay={0} />
+                <RatingButton label="Difícil" icon="😅" color="#fbbf24" glow="rgba(251,191,36,0.3)" onClick={() => handleAvaliacao(1)} delay={50} />
+                <RatingButton label="Fácil" icon="😎" color="#34d399" glow="rgba(52,211,153,0.3)" onClick={() => handleAvaliacao(2)} delay={100} />
+              </div>
+            </div>
+            {!flipped && <p className="text-center text-xs text-muted-foreground mt-4">Pense na resposta antes de virar o card</p>}
+          </>
+        )}
       </main>
     </div>
   );
@@ -289,6 +373,7 @@ const Flashcards = () => {
   const [visible, setVisible] = useState(false);
   const [modoRevisao, setModoRevisao] = useState<ModoRevisao>("espacada");
   const [salvandoModo, setSalvandoModo] = useState(false);
+  const [ordemGrupo, setOrdemGrupo] = useState<OrdemGrupo>("pendentes");
 
   useEffect(() => {
     if (!usuario) return;
@@ -303,7 +388,6 @@ const Flashcards = () => {
         if (perfil?.modoRevisao) setModoRevisao(perfil.modoRevisao);
         const pendentesIds = new Set(pendentes.map((p) => p.id));
 
-        // Agrupa por materialId + assuntoId
         const mapa = new Map<string, GrupoAssunto>();
         for (const fc of todos) {
           const chave = `${fc.materialId || "sem"}__${fc.assuntoId || "sem"}`;
@@ -323,12 +407,7 @@ const Flashcards = () => {
           if (pendentesIds.has(fc.id)) g.pendentes++;
         }
 
-        setGrupos(
-          Array.from(mapa.values()).sort((a, b) => {
-            const matCmp = a.materialTitulo.localeCompare(b.materialTitulo);
-            return matCmp !== 0 ? matCmp : b.pendentes - a.pendentes;
-          })
-        );
+        setGrupos(Array.from(mapa.values()));
       } catch { /* silent */ }
       finally { setCarregando(false); setTimeout(() => setVisible(true), 100); }
     };
@@ -385,16 +464,22 @@ const Flashcards = () => {
 
   const materiaisUnicos = Array.from(new Map(grupos.map((g) => [g.materialId, g.materialTitulo])).entries());
 
+  // Ordenar grupos
+  const ordenarGrupos = (gs: GrupoAssunto[]) => {
+    if (ordemGrupo === "pendentes") return [...gs].sort((a, b) => b.pendentes - a.pendentes);
+    return [...gs].sort((a, b) => a.assuntoTitulo.localeCompare(b.assuntoTitulo));
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="fixed inset-0 grid-pattern opacity-20 pointer-events-none" />
       <Navbar />
 
-      <main className="relative mx-auto max-w-4xl px-4 pt-24 pb-16">
+      <main className="relative mx-auto max-w-4xl px-4 pt-20 sm:pt-24 pb-16">
         {/* Header */}
         <div className={`mb-6 transition-all duration-700 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
           <span className="text-xs font-medium text-violet-400 uppercase tracking-widest">Repetição</span>
-          <h1 className="text-4xl font-bold text-white mt-2" style={{ fontFamily: "Syne, sans-serif" }}>Flashcards</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white mt-2" style={{ fontFamily: "Syne, sans-serif" }}>Flashcards</h1>
           <p className="mt-2 text-muted-foreground text-sm">
             {totalPendentes > 0
               ? <><span className="text-yellow-400 font-semibold">{totalPendentes}</span> pendente{totalPendentes !== 1 ? "s" : ""} · {grupos.reduce((a, g) => a + g.total, 0)} total</>
@@ -403,7 +488,7 @@ const Flashcards = () => {
         </div>
 
         {/* Seletor de modo */}
-        <div className={`mb-5 transition-all duration-700 delay-100 ${visible ? "opacity-100" : "opacity-0"}`}>
+        <div className={`mb-4 transition-all duration-700 delay-100 ${visible ? "opacity-100" : "opacity-0"}`}>
           <div className="glass rounded-2xl p-4 border border-white/10">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Modo de Revisão</p>
             <div className="flex gap-2">
@@ -412,12 +497,12 @@ const Flashcards = () => {
                 { id: "diaria", label: "📅 Diária", desc: "Todos os dias", color: "blue" },
               ].map((m) => (
                 <button key={m.id} onClick={() => handleModoRevisao(m.id as ModoRevisao)}
-                  className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-medium transition-all border ${
+                  className={`flex-1 py-2 px-2 sm:px-3 rounded-xl text-xs font-medium transition-all border ${
                     modoRevisao === m.id
                       ? m.color === "violet" ? "bg-violet-500/20 border-violet-500/40 text-violet-300" : "bg-blue-500/20 border-blue-500/40 text-blue-300"
                       : "border-white/10 text-muted-foreground hover:text-white"
                   }`}>
-                  {m.label}
+                  <span className="block">{m.label}</span>
                   <span className="block text-[9px] mt-0.5 opacity-60">{m.desc}</span>
                 </button>
               ))}
@@ -426,33 +511,44 @@ const Flashcards = () => {
           </div>
         </div>
 
-        {/* Filtro */}
-        <div className={`flex gap-2 mb-6 transition-all duration-700 delay-150 ${visible ? "opacity-100" : "opacity-0"}`}>
+        {/* Filtro + Ordem */}
+        <div className={`flex flex-wrap gap-2 mb-6 transition-all duration-700 delay-150 ${visible ? "opacity-100" : "opacity-0"}`}>
           <button onClick={() => setFiltroPendentes(false)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${!filtroPendentes ? "bg-violet-500/20 border-violet-500/40 text-violet-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${!filtroPendentes ? "bg-violet-500/20 border-violet-500/40 text-violet-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
             Todos
           </button>
           <button onClick={() => setFiltroPendentes(true)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border flex items-center gap-2 ${filtroPendentes ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border flex items-center gap-2 ${filtroPendentes ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
             Pendentes
             {totalPendentes > 0 && (
               <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500/30 text-yellow-400 text-[10px] font-bold">{totalPendentes}</span>
             )}
+          </button>
+
+          <div className="w-px bg-white/10 self-stretch mx-1" />
+
+          <button onClick={() => setOrdemGrupo("pendentes")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${ordemGrupo === "pendentes" ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
+            ⚠ Por pendentes
+          </button>
+          <button onClick={() => setOrdemGrupo("alfabetica")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${ordemGrupo === "alfabetica" ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
+            Az Alfabética
           </button>
         </div>
 
         {/* Grupos por material */}
         <div className="space-y-8">
           {materiaisUnicos.map(([materialId, materialTitulo]) => {
-            const gruposMat = grupos.filter((g) => g.materialId === materialId);
+            const gruposMat = ordenarGrupos(grupos.filter((g) => g.materialId === materialId));
             const totalPendentesMat = gruposMat.reduce((a, g) => a + g.pendentes, 0);
 
             return (
               <div key={materialId}>
                 {/* Header do material */}
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
                   <div className="w-7 h-7 rounded-lg bg-violet-600/20 border border-violet-500/20 flex items-center justify-center text-sm shrink-0">📖</div>
-                  <h2 className="text-sm font-bold text-white flex-1 truncate" style={{ fontFamily: "Syne, sans-serif" }}>{materialTitulo}</h2>
+                  <h2 className="text-sm font-bold text-white flex-1 min-w-0 truncate" style={{ fontFamily: "Syne, sans-serif" }}>{materialTitulo}</h2>
                   {totalPendentesMat > 0 && (
                     <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/20 text-yellow-400 text-[10px] font-bold whitespace-nowrap">
                       {totalPendentesMat} pendente{totalPendentesMat !== 1 ? "s" : ""}
@@ -470,7 +566,7 @@ const Flashcards = () => {
                 </div>
 
                 {/* Grid de assuntos */}
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                   {gruposMat.map((grupo, idx) => {
                     const hasPendentes = grupo.pendentes > 0;
                     const pct = grupo.total > 0 ? ((grupo.total - grupo.pendentes) / grupo.total) * 100 : 0;
@@ -484,9 +580,9 @@ const Flashcards = () => {
                           style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(99,102,241,0.04))" }} />
                         <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-violet-600 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-                        <div className="relative p-5">
+                        <div className="relative p-4 sm:p-5">
                           <div className="flex items-start justify-between gap-2 mb-3">
-                            <div className="flex items-center gap-2.5">
+                            <div className="flex items-center gap-2.5 flex-1 min-w-0">
                               <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0"
                                 style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.25)" }}>🃏</div>
                               <h3 className="font-bold text-white text-sm leading-tight" style={{ fontFamily: "Syne, sans-serif" }}>

@@ -28,20 +28,39 @@ const useCounter = (target: number, duration = 1500) => {
   return count;
 };
 
+// Score Ring corrigido — sem fundo SVG ou classe que causa quadrado
 const ScoreRing = ({ value, size = 80 }: { value: number; size?: number }) => {
   const radius = (size - 10) / 2;
   const circumference = radius * 2 * Math.PI;
   const [animated, setAnimated] = useState(0);
-  useEffect(() => { const t = setTimeout(() => setAnimated(value), 300); return () => clearTimeout(t); }, [value]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(value), 300);
+    return () => clearTimeout(t);
+  }, [value]);
+
   const offset = circumference - (animated / 100) * circumference;
   const color = value >= 70 ? "#34d399" : value >= 40 ? "#fbbf24" : "#f87171";
+
   return (
-    <svg width={size} height={size} className="score-ring">
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
-        strokeDasharray={circumference} strokeDashoffset={offset}
-        style={{ transition: "stroke-dashoffset 1.5s cubic-bezier(0.22,1,0.36,1)", filter: `drop-shadow(0 0 8px ${color})` }} />
-    </svg>
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg
+        width={size}
+        height={size}
+        style={{ transform: "rotate(-90deg)", display: "block" }}
+      >
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius}
+          fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
+          strokeDasharray={circumference} strokeDashoffset={offset}
+          style={{
+            transition: "stroke-dashoffset 1.5s cubic-bezier(0.22,1,0.36,1)",
+            filter: `drop-shadow(0 0 8px ${color})`,
+          }}
+        />
+      </svg>
+    </div>
   );
 };
 
@@ -90,6 +109,9 @@ const Dashboard = () => {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
 
+  const taxaAcerto = stats?.taxaAcerto ?? 0;
+  const taxaColor = taxaAcerto >= 70 ? "#34d399" : taxaAcerto >= 40 ? "#fbbf24" : "#f87171";
+
   if (carregando) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -109,7 +131,6 @@ const Dashboard = () => {
     <div className="min-h-screen bg-background">
       <div className="fixed inset-0 grid-pattern opacity-20 pointer-events-none" />
       <div className="fixed top-0 right-0 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[120px] pointer-events-none" />
-
       <Navbar />
 
       <main className="relative mx-auto max-w-6xl px-4 pt-24 pb-16">
@@ -129,22 +150,22 @@ const Dashboard = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <StatCard label="Materiais" value={stats?.totalMateriais ?? 0} icon="📚" color="#a78bfa" delay={0} />
           <StatCard label="Questões" value={stats?.totalRespostas ?? 0} icon="✏️" color="#60a5fa" delay={100} />
+
+          {/* Taxa de acerto — card customizado com ScoreRing corrigido */}
           <div className="stat-card glass rounded-2xl p-5 card-hover opacity-0 animate-fade-in-up col-span-1"
-            style={{ animationDelay: "200ms", animationFillMode: "forwards", borderColor: "#34d39920" }}>
+            style={{ animationDelay: "200ms", animationFillMode: "forwards", borderColor: `${taxaColor}20` }}>
             <div className="flex items-start justify-between mb-2">
-              <ScoreRing value={stats?.taxaAcerto ?? 0} />
+              <ScoreRing value={taxaAcerto} />
               <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider text-right">Taxa de<br />Acerto</span>
             </div>
             <div className="flex items-baseline gap-1">
-              <span className="text-3xl font-bold" style={{
-                fontFamily: "Syne, sans-serif",
-                color: (stats?.taxaAcerto ?? 0) >= 70 ? "#34d399" : (stats?.taxaAcerto ?? 0) >= 40 ? "#fbbf24" : "#f87171"
-              }}>
-                {stats?.taxaAcerto ?? 0}
+              <span className="text-3xl font-bold" style={{ fontFamily: "Syne, sans-serif", color: taxaColor }}>
+                {taxaAcerto}
               </span>
-              <span className="text-lg font-bold" style={{ color: (stats?.taxaAcerto ?? 0) >= 70 ? "#34d399" : (stats?.taxaAcerto ?? 0) >= 40 ? "#fbbf24" : "#f87171" }}>%</span>
+              <span className="text-lg font-bold" style={{ color: taxaColor }}>%</span>
             </div>
           </div>
+
           <StatCard label="Flashcards Pendentes" value={stats?.flashcardsPendentes ?? 0} icon="🃏"
             color={(stats?.flashcardsPendentes ?? 0) > 0 ? "#fbbf24" : "#34d399"} delay={300} />
         </div>
@@ -155,27 +176,18 @@ const Dashboard = () => {
           <div className="lg:col-span-2 space-y-4">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Ações Rápidas</h2>
 
-            {/* Estudos Card */}
             <button onClick={() => navigate("/estudos")}
               className="w-full text-left relative overflow-hidden rounded-2xl p-6 transition-all duration-300 group border border-violet-500/20 hover:border-violet-500/50"
               style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(99,102,241,0.08) 100%)" }}>
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
                 style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.2) 0%, rgba(99,102,241,0.12) 100%)" }} />
-              <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <span className="text-7xl">✦</span>
-              </div>
+              <div className="absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity"><span className="text-7xl">✦</span></div>
               <div className="relative">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
-                    📚
-                  </div>
-                  <span className="font-semibold text-white text-lg" style={{ fontFamily: "Syne, sans-serif" }}>
-                    Meus Estudos
-                  </span>
+                  <div className="w-10 h-10 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">📚</div>
+                  <span className="font-semibold text-white text-lg" style={{ fontFamily: "Syne, sans-serif" }}>Meus Estudos</span>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Acesse seus materiais salvos, retome um assunto ou adicione novo conteúdo para estudar.
-                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed">Acesse seus materiais salvos, retome um assunto ou adicione novo conteúdo para estudar.</p>
                 <div className="mt-4 flex items-center gap-2 text-violet-400 text-sm font-medium">
                   <span>Ver materiais</span>
                   <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -185,16 +197,13 @@ const Dashboard = () => {
               </div>
             </button>
 
-            {/* New Study */}
             <button onClick={() => navigate("/upload")}
               className="w-full text-left relative overflow-hidden rounded-2xl p-6 transition-all duration-300 group border border-indigo-500/20 hover:border-indigo-500/50"
               style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(59,130,246,0.06) 100%)" }}>
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.18), rgba(59,130,246,0.1))" }} />
               <div className="relative flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-lg group-hover:scale-110 transition-transform shrink-0">
-                  🚀
-                </div>
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-lg group-hover:scale-110 transition-transform shrink-0">🚀</div>
                 <div>
                   <span className="font-semibold text-white" style={{ fontFamily: "Syne, sans-serif" }}>Novo Estudo com IA</span>
                   <p className="text-sm text-muted-foreground mt-1">Upload PDF ou cole texto — a IA identifica assuntos e gera questões automaticamente.</p>
@@ -208,16 +217,13 @@ const Dashboard = () => {
               </div>
             </button>
 
-            {/* Flashcards */}
             <button onClick={() => navigate("/flashcards")}
               className="w-full text-left relative overflow-hidden rounded-2xl p-6 transition-all duration-300 group border border-blue-500/20 hover:border-blue-500/50"
               style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.12) 0%, rgba(99,102,241,0.06) 100%)" }}>
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.18), rgba(99,102,241,0.1))" }} />
               <div className="relative flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-lg group-hover:scale-110 transition-transform shrink-0">
-                  🃏
-                </div>
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-lg group-hover:scale-110 transition-transform shrink-0">🃏</div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-semibold text-white" style={{ fontFamily: "Syne, sans-serif" }}>Revisar Flashcards</span>
@@ -269,13 +275,10 @@ const Dashboard = () => {
                 ))}
               </div>
             </div>
-
             <div className="rounded-2xl p-5 opacity-0 animate-fade-in-up border border-yellow-500/20"
               style={{ animationDelay: "500ms", animationFillMode: "forwards", background: "linear-gradient(135deg, rgba(251,191,36,0.08), rgba(245,158,11,0.04))" }}>
               <p className="text-xs text-yellow-500/80 font-medium uppercase tracking-wider mb-2">💡 Dica</p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Revise flashcards todo dia pela manhã. A consistência diária supera sessões longas esporádicas.
-              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">Revise flashcards todo dia pela manhã. A consistência diária supera sessões longas esporádicas.</p>
             </div>
           </div>
         </div>

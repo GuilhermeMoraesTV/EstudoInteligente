@@ -91,15 +91,9 @@ export const buscarMaterialPorId = async (materialId: string): Promise<Material 
 };
 
 export const excluirMaterial = async (materialId: string, userId: string): Promise<void> => {
-  // Exclui o material principal
   await deleteDoc(doc(db, "materiais", materialId));
 
-  // Exclui questões associadas em batch
-  const qQuestoes = query(
-    collection(db, "questoes"),
-    where("userId", "==", userId),
-    where("materialId", "==", materialId)
-  );
+  const qQuestoes = query(collection(db, "questoes"), where("userId", "==", userId), where("materialId", "==", materialId));
   const snapQuestoes = await getDocs(qQuestoes);
   if (snapQuestoes.docs.length > 0) {
     const b = writeBatch(db);
@@ -107,12 +101,7 @@ export const excluirMaterial = async (materialId: string, userId: string): Promi
     await b.commit();
   }
 
-  // Exclui flashcards associados em batch
-  const qFlash = query(
-    collection(db, "flashcards"),
-    where("userId", "==", userId),
-    where("materialId", "==", materialId)
-  );
+  const qFlash = query(collection(db, "flashcards"), where("userId", "==", userId), where("materialId", "==", materialId));
   const snapFlash = await getDocs(qFlash);
   if (snapFlash.docs.length > 0) {
     const b = writeBatch(db);
@@ -121,25 +110,18 @@ export const excluirMaterial = async (materialId: string, userId: string): Promi
   }
 };
 
-// Renomear título do material
 export const renomearMaterial = async (materialId: string, novoTitulo: string): Promise<void> => {
   await updateDoc(doc(db, "materiais", materialId), { titulo: novoTitulo });
 };
 
-// Renomear assunto dentro de um material (atualiza no array do material)
 export const renomearAssunto = async (
   materialId: string,
   assuntoId: string,
   novoTitulo: string,
   assuntosAtuais: AssuntoSalvo[]
 ): Promise<void> => {
-  const novosAssuntos = assuntosAtuais.map((a) =>
-    a.id === assuntoId ? { ...a, titulo: novoTitulo } : a
-  );
+  const novosAssuntos = assuntosAtuais.map((a) => a.id === assuntoId ? { ...a, titulo: novoTitulo } : a);
   await updateDoc(doc(db, "materiais", materialId), { assuntos: novosAssuntos });
-
-  // Atualiza também nas questões e flashcards deste assunto
-  // (feito em background, sem bloquear UI)
 };
 
 // ==================== QUESTÕES ====================
@@ -184,9 +166,7 @@ export const salvarQuestoes = async (
   return ids;
 };
 
-export const buscarQuestoesPorAssunto = async (
-  userId: string, materialId: string, assuntoId: string
-): Promise<Questao[]> => {
+export const buscarQuestoesPorAssunto = async (userId: string, materialId: string, assuntoId: string): Promise<Questao[]> => {
   const q = query(
     collection(db, "questoes"),
     where("userId", "==", userId),
@@ -208,7 +188,7 @@ export interface Flashcard {
   assuntoTitulo: string;
   frente: string;
   verso: string;
-  origem: "gerado" | "erro";
+  origem: "gerado" | "erro" | "manual";
   proximaRevisao: Timestamp;
   intervalo: number;
   facilidade: number;
@@ -222,7 +202,7 @@ export const salvarFlashcards = async (
   assuntoId: string,
   assuntoTitulo: string,
   flashcards: Array<{ frente: string; verso: string }>,
-  origem: "gerado" | "erro" = "gerado",
+  origem: "gerado" | "erro" | "manual" = "gerado",
   materialTitulo?: string
 ): Promise<string[]> => {
   const ids: string[] = [];
@@ -238,6 +218,37 @@ export const salvarFlashcards = async (
     ids.push(docRef.id);
   }
   return ids;
+};
+
+// Criar flashcard manual (sem material vinculado ou com material)
+export const criarFlashcardManual = async (
+  userId: string,
+  frente: string,
+  verso: string,
+  opcoes: {
+    materialId?: string;
+    materialTitulo?: string;
+    assuntoId?: string;
+    assuntoTitulo?: string;
+  } = {}
+): Promise<string> => {
+  const agora = Timestamp.now();
+  const docRef = await addDoc(collection(db, "flashcards"), {
+    userId,
+    materialId: opcoes.materialId || "manual",
+    materialTitulo: opcoes.materialTitulo || "Criados manualmente",
+    assuntoId: opcoes.assuntoId || "manual",
+    assuntoTitulo: opcoes.assuntoTitulo || "Manual",
+    frente,
+    verso,
+    origem: "manual",
+    proximaRevisao: agora,
+    intervalo: 1,
+    facilidade: 2.5,
+    repeticoes: 0,
+    criadoEm: agora,
+  });
+  return docRef.id;
 };
 
 export const buscarFlashcardsPendentes = async (userId: string): Promise<Flashcard[]> => {
@@ -256,9 +267,7 @@ export const buscarTodosFlashcardsDoUsuario = async (userId: string): Promise<Fl
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Flashcard));
 };
 
-export const buscarFlashcardsPorMaterial = async (
-  userId: string, materialId: string
-): Promise<Flashcard[]> => {
+export const buscarFlashcardsPorMaterial = async (userId: string, materialId: string): Promise<Flashcard[]> => {
   const q = query(
     collection(db, "flashcards"),
     where("userId", "==", userId),
@@ -270,12 +279,10 @@ export const buscarFlashcardsPorMaterial = async (
     .sort((a, b) => timestampToMillis(a.criadoEm) - timestampToMillis(b.criadoEm));
 };
 
-// Excluir flashcard individual
 export const excluirFlashcard = async (flashcardId: string): Promise<void> => {
   await deleteDoc(doc(db, "flashcards", flashcardId));
 };
 
-// Excluir múltiplos flashcards em batch
 export const excluirFlashcardsBatch = async (ids: string[]): Promise<void> => {
   if (ids.length === 0) return;
   const b = writeBatch(db);
@@ -283,16 +290,10 @@ export const excluirFlashcardsBatch = async (ids: string[]): Promise<void> => {
   await b.commit();
 };
 
-// Editar frente/verso de um flashcard
-export const editarFlashcard = async (
-  flashcardId: string,
-  frente: string,
-  verso: string
-): Promise<void> => {
+export const editarFlashcard = async (flashcardId: string, frente: string, verso: string): Promise<void> => {
   await updateDoc(doc(db, "flashcards", flashcardId), { frente, verso });
 };
 
-// SM-2 com suporte a modo diário
 export const atualizarFlashcard = async (
   flashcardId: string,
   qualidade: number,

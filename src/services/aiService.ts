@@ -1,17 +1,25 @@
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebaseConfig";
 
+// ============================================================
+// CHAVE DA API — lida do Firestore, nunca do bundle
+// ============================================================
 let cachedApiKey: string | null = null;
 
-async function getGeminiKey() {
+async function getGeminiKey(): Promise<string> {
   if (cachedApiKey) return cachedApiKey;
-
-  const docSnap = await getDoc(doc(db, "configuracoes", "chaves"));
-  if (docSnap.exists()) {
-    cachedApiKey = docSnap.data().gemini;
-    return cachedApiKey;
+  try {
+    const docSnap = await getDoc(doc(db, "configuracoes", "chaves"));
+    if (docSnap.exists() && docSnap.data().gemini) {
+      cachedApiKey = docSnap.data().gemini as string;
+      return cachedApiKey;
+    }
+    throw new Error(
+      "Campo 'gemini' não encontrado. Vá ao Firestore > configuracoes > chaves e adicione o campo gemini com sua chave."
+    );
+  } catch (e) {
+    throw new Error(`Erro ao carregar chave da API: ${e}`);
   }
-  throw new Error("Chave Gemini não encontrada no banco de dados.");
 }
 
 async function chamarGemini(prompt: string, temperature = 0.4): Promise<string> {
@@ -26,18 +34,26 @@ async function chamarGemini(prompt: string, temperature = 0.4): Promise<string> 
       generationConfig: {
         temperature,
         maxOutputTokens: 8192,
-        responseMimeType: "text/plain",
+        // SEM responseMimeType — o parser abaixo trata qualquer saída
       },
     }),
   });
+
   if (!response.ok) {
-    const err = await response.json();
+    const err = await response.json().catch(() => ({}));
+    if (response.status === 400 || response.status === 403) {
+      cachedApiKey = null;
+    }
     throw new Error(err?.error?.message || `Erro HTTP ${response.status}`);
   }
+
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
+// ============================================================
+// TIPOS
+// ============================================================
 export interface Assunto {
   id: string;
   titulo: string;
@@ -64,19 +80,97 @@ export interface RespostaIA {
   flashcards: Array<{ frente: string; verso: string }>;
 }
 
+// ============================================================
+// PARSER DE JSON ROBUSTO
+// ============================================================
+
+/**
+ * Percorre o JSON caractere a caractere.
+ * Dentro de strings escapa \n \r \t reais e descarta
+ * outros caracteres de controle (< 0x20).
+ */
+function sanitizarStringsJSON(json: string): string {
+  let resultado = "";
+  let dentroString = false;
+  let escape = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const char = json[i];
+    const code = json.charCodeAt(i);
+
+    if (escape) {
+      resultado += char;
+      escape = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escape = true;
+      resultado += char;
+      continue;
+    }
+
+    if (char === '"') {
+      dentroString = !dentroString;
+      resultado += char;
+      continue;
+    }
+
+    if (dentroString) {
+      if (char === "\n") {
+        resultado += "\\n";
+      } else if (char === "\r") {
+        resultado += "\\r";
+      } else if (char === "\t") {
+        resultado += "\\t";
+      } else if (code < 0x20) {
+        // Caractere de controle inválido: descarta
+      } else {
+        resultado += char;
+      }
+    } else {
+      resultado += char;
+    }
+  }
+
+  return resultado;
+}
+
 function extrairJSON(texto: string): string {
-  let limpo = texto.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+  // 1. Remove blocos markdown
+  let limpo = texto
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/gi, "")
+    .trim();
+
+  // 2. Isola o bloco JSON principal
   const inicioObj = limpo.indexOf("{");
   const fimObj = limpo.lastIndexOf("}");
   if (inicioObj !== -1 && fimObj !== -1) {
     limpo = limpo.substring(inicioObj, fimObj + 1);
   }
+
+  // 3. Troca aspas tipográficas por aspas retas
+  limpo = limpo
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+
+  // 4. Remove trailing commas
   limpo = limpo.replace(/,\s*([}\]])/g, "$1");
+
+  // 5. Remove strings vazias órfãs
   limpo = limpo.replace(/,\s*""\s*}/g, "}");
   limpo = limpo.replace(/,\s*""\s*]/g, "]");
+
+  // 6. Sanitiza caracteres de controle dentro de strings
+  limpo = sanitizarStringsJSON(limpo);
+
   return limpo;
 }
 
+// ============================================================
+// UTILITÁRIOS DE TEXTO
+// ============================================================
 function amostrarTexto(texto: string, maxChars = 20000): string {
   if (texto.length <= maxChars) return texto;
   const terco = Math.floor(maxChars / 3);
@@ -88,39 +182,106 @@ function amostrarTexto(texto: string, maxChars = 20000): string {
   return `${inicio}\n\n[...]\n\n${meio}\n\n[...]\n\n${fim}`;
 }
 
+/**
+ * Extrai o trecho mais relevante do texto original para um dado assunto.
+ * NUNCA passa pelo JSON do Gemini — elimina de vez o erro de aspas no "trecho".
+ *
+ * Estratégia:
+ * 1. Divide o texto em parágrafos
+ * 2. Pontua cada parágrafo pelas palavras-chave do título/descrição
+ * 3. Retorna o parágrafo mais relevante com >= minChars caracteres
+ * 4. Fallback: primeiro parágrafo longo; depois início do texto
+ */
+function extrairTrechoLocal(
+  textoOriginal: string,
+  titulo: string,
+  descricao: string,
+  minChars = 150,
+  maxChars = 800
+): string {
+  const palavrasChave = [...titulo.split(/\s+/), ...descricao.split(/\s+/)]
+    .map((p) => p.toLowerCase().replace(/[^a-záàãâéêíóôõúüç]/gi, ""))
+    .filter((p) => p.length > 3);
+
+  const paragrafos = textoOriginal
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter((p) => p.length >= minChars);
+
+  let melhor = "";
+  let melhorPontos = -1;
+
+  for (const paragrafo of paragrafos) {
+    const lower = paragrafo.toLowerCase();
+    const pontos = palavrasChave.reduce(
+      (acc, kw) => acc + (lower.includes(kw) ? 1 : 0),
+      0
+    );
+    if (pontos > melhorPontos) {
+      melhorPontos = pontos;
+      melhor = paragrafo;
+    }
+  }
+
+  if (!melhor && paragrafos.length > 0) melhor = paragrafos[0];
+  if (!melhor) melhor = textoOriginal.substring(0, maxChars);
+
+  return melhor.substring(0, maxChars);
+}
+
+// ============================================================
+// MAPEAMENTO DE ASSUNTOS
+// ============================================================
+//
+// CORREÇÃO DEFINITIVA DO ERRO DE JSON:
+//
+// Antes: o Gemini retornava o campo "trecho" dentro do JSON.
+// O trecho vem do PDF do usuário e pode conter aspas duplas ("texto"),
+// hífens duplos, colchetes, e outros caracteres que quebram o JSON.
+// Nenhum parser consegue corrigir aspas não-escapadas de forma confiável.
+//
+// Agora: o prompt NÃO pede "trecho" ao Gemini — só pede titulo e descricao
+// (strings curtas e controladas). O trecho é extraído do texto original
+// pelo código, via extrairTrechoLocal(), sem jamais passar pelo JSON.
+// ============================================================
+
 export const mapearAssuntos = async (
   texto: string,
   nomeArquivo?: string
 ): Promise<RespostaMapaAssuntos> => {
   const textoLimpo = texto.trim();
-  const nomeBase = nomeArquivo?.replace(/\.(pdf|txt|docx?)$/i, "") || "Material de Estudo";
+  const nomeBase =
+    nomeArquivo?.replace(/\.(pdf|txt|docx?)$/i, "") || "Material de Estudo";
   const textoAmostrado = amostrarTexto(textoLimpo, 22000);
 
   const prompt = `Você é especialista pedagógico em concursos públicos brasileiros.
 
 ARQUIVO: ${nomeBase}
 
-MISSÃO: Identificar TODOS os tópicos/assuntos pedagógicos do material abaixo.
+MISSÃO: Identificar os tópicos pedagógicos do material abaixo.
 
 REGRAS:
-- IGNORE: sumários, índices, apresentações, prefácios, notas editoriais, sobre o autor, informações de banca
+- IGNORE: sumários, índices, apresentações, prefácios, notas editoriais, sobre o autor
 - FOQUE em: conceitos, definições, regras, leis, teorias, classificações
 - Identifique entre 3 e 8 assuntos principais
-- Títulos ESPECÍFICOS: "Concordância Verbal", não "Gramática"
-- Cada trecho deve ter ao menos 100 caracteres do texto original
+- Títulos ESPECÍFICOS (ex: "Concordância Verbal", não "Gramática")
 
-Retorne APENAS JSON válido sem markdown:
+FORMATO DE SAÍDA — retorne SOMENTE este JSON, sem markdown, sem texto antes ou depois:
 {
   "tituloGeral": "Título representativo do material",
   "assuntos": [
     {
       "id": "assunto_1",
-      "titulo": "Título específico",
-      "descricao": "O que será estudado",
-      "trecho": "Trecho do texto original (mínimo 100 caracteres)"
+      "titulo": "Título específico do tópico",
+      "descricao": "Uma frase curta descrevendo o que será estudado"
     }
   ]
 }
+
+REGRAS DO JSON:
+- Strings curtas, sem quebras de linha
+- Sem aspas dentro dos valores
+- Sem markdown, sem blocos de código
 
 TEXTO:
 ${textoAmostrado}`;
@@ -128,9 +289,17 @@ ${textoAmostrado}`;
   try {
     const raw = await chamarGemini(prompt, 0.2);
     const json = extrairJSON(raw);
-    const dados: RespostaMapaAssuntos = JSON.parse(json);
 
-    if (!dados.tituloGeral || !Array.isArray(dados.assuntos) || dados.assuntos.length === 0) {
+    const dados = JSON.parse(json) as {
+      tituloGeral: string;
+      assuntos: Array<{ id: string; titulo: string; descricao: string }>;
+    };
+
+    if (
+      !dados.tituloGeral ||
+      !Array.isArray(dados.assuntos) ||
+      dados.assuntos.length === 0
+    ) {
       throw new Error("Estrutura inválida");
     }
 
@@ -139,16 +308,23 @@ ${textoAmostrado}`;
       "banca", "edital de referência", "como usar", "introdução ao material",
       "nota do autor", "nota editorial",
     ];
+
     const assuntosFiltrados = dados.assuntos.filter((a) => {
-      const tituloLower = a.titulo.toLowerCase();
-      return !palavrasProibidas.some((p) => tituloLower.includes(p));
+      const lower = a.titulo.toLowerCase();
+      return !palavrasProibidas.some((p) => lower.includes(p));
     });
+
+    const listaFinal =
+      assuntosFiltrados.length > 0 ? assuntosFiltrados : dados.assuntos;
 
     return {
       tituloGeral: dados.tituloGeral,
-      assuntos: (assuntosFiltrados.length > 0 ? assuntosFiltrados : dados.assuntos).map((a, i) => ({
-        ...a,
+      assuntos: listaFinal.map((a, i) => ({
         id: `assunto_${i + 1}`,
+        titulo: a.titulo,
+        descricao: a.descricao,
+        // ✅ Trecho extraído localmente — sem passar pelo JSON do Gemini
+        trecho: extrairTrechoLocal(textoLimpo, a.titulo, a.descricao),
       })),
     };
   } catch (e) {
@@ -159,13 +335,17 @@ ${textoAmostrado}`;
         {
           id: "assunto_1",
           titulo: nomeBase,
-          descricao: "Conteúdo do material enviado",
-          trecho: textoLimpo.substring(0, 3000),
+          descricao: "Conteúdo completo do material enviado",
+          trecho: textoLimpo.substring(0, 800),
         },
       ],
     };
   }
 };
+
+// ============================================================
+// GERAÇÃO DE CONTEÚDO — QUESTÕES E FLASHCARDS
+// ============================================================
 
 export const gerarConteudoParaAssunto = async (
   assunto: Assunto,
@@ -176,110 +356,60 @@ export const gerarConteudoParaAssunto = async (
   const usarConhecimentoIA = textoBase.length < 200;
 
   const fonteDados = usarConhecimentoIA
-    ? `ASSUNTO: "${assunto.titulo}" — ${assunto.descricao}
+    ? `ASSUNTO: ${assunto.titulo} — ${assunto.descricao}
 Use seu conhecimento sobre este assunto para gerar questões de alto nível para concurso público.`
     : `CONTEÚDO DE REFERÊNCIA (NÃO mencione o material, apostila ou texto nas questões):
 ${textoBase.substring(0, 5000)}`;
 
+  const regraJSON = `REGRAS CRÍTICAS DE FORMATO JSON:
+- Retorne APENAS JSON puro, sem markdown, sem blocos de código
+- Use \\n para separar linhas na explicacao — NUNCA quebre linha real dentro de uma string
+- Não use aspas duplas dentro dos valores de string — reescreva sem elas
+- Cada string deve estar em uma única linha`;
+
+  // ── MODO FLASH ──
   const promptFlash = `Você é elaborador de questões de memorização para concursos públicos brasileiros.
 
 ASSUNTO: ${assunto.titulo}
 
 ${fonteDados}
 
-OBJETIVO DO MODO FLASH:
-Questões CURTAS e DIRETAS focadas em memorização de:
-- Conceitos e definições objetivas
-- Penas e punições (ex: "A pena para X é de Y anos")
-- Datas e prazos legais
-- Números, percentuais e limites
-- Classificações e categorias
-- Sinônimos técnicos e nomenclaturas
+OBJETIVO: Questões CURTAS e DIRETAS sobre conceitos, penas, datas, números, classificações.
 
-REGRAS OBRIGATÓRIAS:
-1. Enunciados CURTOS — máximo 2 linhas, direto ao ponto
-2. NÃO use situações-problema longas — foco em "O que é X?" / "Qual a pena de Y?" / "Em quanto tempo Z?"
-3. Alternativas curtas — máximo 1 linha cada
-4. NÃO mencione "o texto", "o material" ou "a apostila"
-5. Velocidade: o aluno deve conseguir responder em menos de 20 segundos
+REGRAS:
+1. Enunciados máximo 2 linhas
+2. Alternativas curtas — máximo 1 linha cada
+3. NÃO mencione o texto ou material
+4. Resposta em menos de 20 segundos
 
-FORMATO DA EXPLICAÇÃO (obrigatório, use exatamente este template):
-✅ CORRETA [LETRA]: [motivo direto e objetivo]
-❌ [LETRA]: [por que está errada — em uma linha]
-❌ [LETRA]: [por que está errada — em uma linha]
-❌ [LETRA]: [por que está errada — em uma linha]
-❌ [LETRA]: [por que está errada — em uma linha]
-📌 Conceito-chave: [regra ou definição para memorizar]
-💡 Dica: [mnemônico, associação ou pegadinha comum]
+${regraJSON}
 
-Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards CONCISOS.
+Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards.
 
-Retorne APENAS JSON puro válido sem markdown:
-{
-  "resumo": "Síntese dos pontos-chave para memorização",
-  "questoes": [
-    {
-      "pergunta": "Enunciado curto e direto (máx 2 linhas)",
-      "alternativas": ["A) resposta curta", "B) resposta curta", "C) resposta curta", "D) resposta curta", "E) resposta curta"],
-      "correta": "A) texto exato da alternativa correta",
-      "explicacao": "✅ CORRETA A: motivo direto\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: definição\\n💡 Dica: mnemônico",
-      "tipo": "simples"
-    }
-  ],
-  "flashcards": [
-    {
-      "frente": "Pergunta curta e objetiva",
-      "verso": "Resposta direta (máx 2 linhas)"
-    }
-  ]
-}`;
+{"resumo":"Síntese dos pontos-chave","questoes":[{"pergunta":"Enunciado curto","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: definicao\\n💡 Dica: mneumonico","tipo":"simples"}],"flashcards":[{"frente":"Pergunta curta","verso":"Resposta direta"}]}`;
 
-  const promptConcurso = `Você é elaborador sênior de provas de concursos públicos brasileiros (CESPE/CEBRASPE, FCC, VUNESP, FGV).
+  // ── MODO CONCURSO ──
+  const promptConcurso = `Você é elaborador sênior de provas de concursos públicos brasileiros (CESPE, FCC, VUNESP, FGV).
 
 ASSUNTO: ${assunto.titulo}
-NÍVEL: Concurso público de nível médio/superior
 
 ${fonteDados}
 
-INSTRUÇÕES PARA AS QUESTÕES:
-1. NUNCA mencione "o texto", "o material", "a apostila" — questões devem ser AUTOSSUFICIENTES
-2. Crie situações-problema reais e casos concretos
-3. Use linguagem técnica precisa como nas bancas reais
-4. Alternativas incorretas devem ter erros sutis e plausíveis
-5. Varie verbos: analise, julgue, identifique, assinale, é correto afirmar...
+INSTRUÇÕES:
+1. NUNCA mencione o texto ou material — questões autossuficientes
+2. Situações-problema reais e casos concretos
+3. Linguagem técnica precisa
+4. Alternativas incorretas com erros sutis
+5. Varie verbos: analise, julgue, identifique, assinale
 
-FORMATO DA EXPLICAÇÃO (obrigatório, use exatamente este template):
-✅ CORRETA [LETRA]: [motivo detalhado de por que está correta]
-❌ [LETRA]: [por que esta alternativa está errada — erro técnico específico]
-❌ [LETRA]: [por que esta alternativa está errada]
-❌ [LETRA]: [por que esta alternativa está errada]
-❌ [LETRA]: [por que esta alternativa está errada]
-📌 Conceito-chave: [regra, lei ou fundamento técnico]
-💡 Dica Prova: [estratégia de memorização ou pegadinha recorrente]
+${regraJSON}
 
-Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards CONCISOS.
+Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards.
 
-Retorne APENAS JSON puro válido sem markdown:
-{
-  "resumo": "Síntese dos pontos principais em 2-3 frases",
-  "questoes": [
-    {
-      "pergunta": "Enunciado completo e autossuficiente com situação-problema",
-      "alternativas": ["A) texto completo", "B) texto completo", "C) texto completo", "D) texto completo", "E) texto completo"],
-      "correta": "A) texto exato da alternativa correta",
-      "explicacao": "✅ CORRETA A: motivo detalhado\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica Prova: estratégia",
-      "tipo": "elaborada"
-    }
-  ],
-  "flashcards": [
-    {
-      "frente": "Pergunta curta e objetiva sobre ${assunto.titulo}",
-      "verso": "Resposta direta e objetiva (máx 2 linhas)"
-    }
-  ]
-}`;
+{"resumo":"Síntese dos pontos principais","questoes":[{"pergunta":"Enunciado completo com situação-problema","alternativas":["A) texto","B) texto","C) texto","D) texto","E) texto"],"correta":"A) texto exato","explicacao":"✅ CORRETA A: motivo detalhado\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica Prova: estrategia","tipo":"elaborada"}],"flashcards":[{"frente":"Pergunta objetiva","verso":"Resposta direta"}]}`;
 
-  const promptEscolhido = tipoQuestao === "simples" ? promptFlash : promptConcurso;
+  const promptEscolhido =
+    tipoQuestao === "simples" ? promptFlash : promptConcurso;
 
   try {
     const raw = await chamarGemini(promptEscolhido, 0.6);
@@ -295,17 +425,10 @@ Retorne APENAS JSON puro válido sem markdown:
     console.error("Erro ao gerar conteúdo:", e);
 
     try {
-      const promptFallback = tipoQuestao === "simples"
-        ? `Elabore ${quantidadeQuestoes} questões de memorização sobre "${assunto.titulo}" — curtas, sobre definições, penas, datas, números. Enunciados de no máximo 2 linhas.
-Explicação formato: ✅ CORRETA X: motivo\\n❌ Y: motivo\\n📌 Conceito: definição\\n💡 Dica: mnemônico
-
-JSON APENAS:
-{"resumo":"pontos-chave","questoes":[{"pergunta":"Qual é X?","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: definição\\n💡 Dica: mnemônico","tipo":"simples"}],"flashcards":[{"frente":"pergunta curta","verso":"resposta direta"}]}`
-        : `Elabore ${quantidadeQuestoes} questões de concurso público estilo CESPE sobre "${assunto.titulo}" com situações-problema.
-Explicação: ✅ CORRETA X: motivo\\n❌ Y: motivo\\n📌 Conceito: fundamento\\n💡 Dica: estratégia
-
-JSON APENAS:
-{"resumo":"síntese","questoes":[{"pergunta":"Assinale a alternativa correta sobre X:","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: fundamento\\n💡 Dica Prova: estratégia","tipo":"elaborada"}],"flashcards":[{"frente":"pergunta curta","verso":"resposta direta"}]}`;
+      const promptFallback =
+        tipoQuestao === "simples"
+          ? `Elabore ${quantidadeQuestoes} questoes curtas de memorização sobre ${assunto.titulo}. Use \\n na explicacao. Sem aspas nos valores. JSON puro: {"resumo":"pontos","questoes":[{"pergunta":"Qual e X?","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: definicao\\n💡 Dica: dica","tipo":"simples"}],"flashcards":[{"frente":"pergunta","verso":"resposta"}]}`
+          : `Elabore ${quantidadeQuestoes} questoes de concurso sobre ${assunto.titulo}. Use \\n na explicacao. Sem aspas nos valores. JSON puro: {"resumo":"sintese","questoes":[{"pergunta":"Assinale sobre X:","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: fundamento\\n💡 Dica Prova: estrategia","tipo":"elaborada"}],"flashcards":[{"frente":"pergunta","verso":"resposta"}]}`;
 
       const raw2 = await chamarGemini(promptFallback, 0.5);
       const json2 = extrairJSON(raw2);
@@ -319,46 +442,27 @@ JSON APENAS:
   }
 };
 
+// ============================================================
+// REFORÇO
+// ============================================================
+
 export const gerarReforcoParaQuestao = async (
   perguntaOriginal: string,
   assunto: string
 ): Promise<RespostaIA> => {
   const prompt = `Você é professor de concursos públicos especialista em reforço de aprendizagem.
 
-O aluno precisa de reforço sobre "${assunto}". Questão de referência:
-"${perguntaOriginal}"
+Aluno precisa de reforço sobre ${assunto}. Questão de referência: ${perguntaOriginal}
 
-Gere 3 questões de reforço sobre este mesmo conceito (ângulos diferentes) e 3 flashcards CONCISOS.
-Questões autossuficientes — NÃO mencione o material ou texto.
+Gere 3 questões de reforço (ângulos diferentes) e 3 flashcards CONCISOS.
+Questões autossuficientes — NÃO mencione material ou texto.
 
-FORMATO DA EXPLICAÇÃO (obrigatório):
-✅ CORRETA [LETRA]: motivo direto
-❌ [LETRA]: por que está errada
-❌ [LETRA]: por que está errada
-❌ [LETRA]: por que está errada
-❌ [LETRA]: por que está errada
-📌 Conceito-chave: fundamento técnico
-💡 Dica: mnemônico ou estratégia
+REGRAS DE JSON:
+- APENAS JSON puro, sem markdown
+- Use \\n para separar linhas na explicacao — NUNCA quebre linha real
+- Sem aspas dentro dos valores
 
-JSON APENAS:
-{
-  "resumo": "Reforço importante. Estude mais questões para fixar o conceito.",
-  "questoes": [
-    {
-      "pergunta": "Questão de reforço autossuficiente",
-      "alternativas": ["A) texto", "B) texto", "C) texto", "D) texto", "E) texto"],
-      "correta": "A) texto exato",
-      "explicacao": "✅ CORRETA A: motivo\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica: mnemônico",
-      "tipo": "elaborada"
-    }
-  ],
-  "flashcards": [
-    {
-      "frente": "Pergunta curta sobre ${assunto}",
-      "verso": "Resposta direta (máx 2 linhas)"
-    }
-  ]
-}`;
+{"resumo":"Reforço importante. Estude mais para fixar o conceito.","questoes":[{"pergunta":"Questão de reforço","alternativas":["A) texto","B) texto","C) texto","D) texto","E) texto"],"correta":"A) texto exato","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica: mneumonico","tipo":"elaborada"}],"flashcards":[{"frente":"Pergunta curta sobre ${assunto}","verso":"Resposta direta"}]}`;
 
   try {
     const raw = await chamarGemini(prompt, 0.6);
@@ -369,13 +473,21 @@ JSON APENAS:
   }
 };
 
+// ============================================================
+// FEEDBACK DE DESEMPENHO
+// ============================================================
+
 export const gerarFeedbackDesempenho = async (
   taxaAcerto: number,
   temasErrados: string[]
 ): Promise<string> => {
   const prompt = `Tutor sênior de concursos públicos. O aluno obteve ${taxaAcerto}% de acerto.
-${temasErrados.length > 0 ? `Pontos fracos: ${temasErrados.slice(0, 3).join(", ")}.` : "Desempenho excelente."}
-Feedback motivador, estratégico e direto em no máximo 2 frases. Seja prático e encorajador.`;
+${
+  temasErrados.length > 0
+    ? `Pontos fracos: ${temasErrados.slice(0, 3).join(", ")}.`
+    : "Desempenho excelente."
+}
+Feedback motivador, estratégico e direto em no máximo 2 frases.`;
 
   try {
     return await chamarGemini(prompt, 0.8);

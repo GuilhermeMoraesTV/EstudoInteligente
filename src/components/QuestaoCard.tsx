@@ -2,7 +2,7 @@
 // Componente unificado de questão com suporte a:
 //   - múltipla escolha (padrão — 5 alternativas A-E)
 //   - certo/errado (alternativas contendo "Certo" / "Errado")
-//   - associação/julgamento (múltiplas afirmativas para julgar)
+//   - associação/julgamento (múltiplas afirmativas para julgar I, II, III, IV)
 
 import { useState, useEffect } from "react";
 
@@ -17,10 +17,10 @@ export function limparMarkdown(texto: string): string {
     .replace(/`(.+?)`/g, "$1");
 }
 
-// Detecta o tipo de questão a partir das alternativas
+// Detecta o tipo de questão a partir das alternativas e do enunciado
 export type TipoQuestao = "multipla" | "certo_errado" | "associacao";
 
-export function detectarTipoQuestao(alternativas: string[]): TipoQuestao {
+export function detectarTipoQuestao(alternativas: string[], pergunta?: string): TipoQuestao {
   if (!alternativas || alternativas.length === 0) return "multipla";
 
   const textos = alternativas.map((a) =>
@@ -36,7 +36,33 @@ export function detectarTipoQuestao(alternativas: string[]): TipoQuestao {
     return "certo_errado";
   }
 
-  // Associação/Julgamento: pergunta com itens numerados (I, II, III) ou padrões "Julgue"
+  // Associação/Julgamento: verifica no enunciado por itens I, II, III, IV
+  if (pergunta) {
+    const perguntaLower = pergunta.toLowerCase();
+    const temItensRomanos = /\b(i{1,3}|iv|v{1,3}|vi{1,3}|ix|x)\s*[\.\-\)]/i.test(pergunta);
+    const temJulgamento = /julgue|analise os itens|marque a (opção|alternativa)|assinale a (opção|alternativa) (que|correta)/i.test(perguntaLower);
+    const temNumeracao = /^\s*\d+[\.\)]\s/m.test(pergunta);
+    if (temItensRomanos || (temJulgamento && alternativas.some(a => /I{1,3}|IV|V/i.test(a)))) {
+      return "associacao";
+    }
+    if (temNumeracao && alternativas.some(a => /apenas|somente|todos|nenhum/i.test(a))) {
+      return "associacao";
+    }
+  }
+
+  // Associação via alternativas: padrão "Apenas I e III", "I, II e IV", etc.
+  const temAssociacao = alternativas.some((a) => {
+    const limpo = limparMarkdown(a).replace(/^[A-E]\)\s*/i, "").trim();
+    return (
+      /^(apenas|somente)\s+(i{1,3}|iv|v|vi{1,3})\b/i.test(limpo) ||
+      /\b(i{1,3}|iv|v{1,3}|vi{1,3})\s*(,|e)\s*(i{1,3}|iv|v{1,3}|vi{1,3})\b/i.test(limpo) ||
+      /^todos\s+(est|são|estão)/i.test(limpo) ||
+      /^nenhum/i.test(limpo)
+    );
+  });
+  if (temAssociacao) return "associacao";
+
+  // Associação via itens no enunciado das próprias alternativas
   const temItens = alternativas.some((a) =>
     /^[IVX]+[\.\)]\s/.test(limparMarkdown(a).trim()) ||
     /^\d+[\.\)]\s/.test(limparMarkdown(a).trim())
@@ -163,7 +189,7 @@ function OpcaoMultipla({
   respondida: boolean;
   selecionada: string | null;
   correta: string;
-  revelada: boolean; // "mostrar resposta" ativo
+  revelada: boolean;
   onSelect: (alt: string) => void;
 }) {
   const letters = ["A", "B", "C", "D", "E"];
@@ -346,8 +372,6 @@ function QuestaoAssociacao({
   revelada: boolean;
   onSelect: (alt: string) => void;
 }) {
-  // Extrai os itens e a alternativa-gabarito das opções
-  // Alternativas de associação geralmente são as combinações corretas (ex: "I e III" / "Apenas II")
   const bloqueada = respondida || revelada;
 
   return (
@@ -518,7 +542,8 @@ export interface QuestaoCardProps {
   acertouAtual: boolean | null;
   gerandoReforco?: boolean;
   reforcoGerado?: boolean;
-  podePular: boolean; // false se for a última questão
+  podePular: boolean;
+  temProxima: boolean; // true se há questão após esta (para texto do botão)
   carregandoMais?: boolean;
 }
 
@@ -541,13 +566,15 @@ const QuestaoCard = ({
   gerandoReforco = false,
   reforcoGerado = false,
   podePular,
+  temProxima,
   carregandoMais = false,
 }: QuestaoCardProps) => {
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [revelada, setRevelada] = useState(false);
   const [showExplicacao, setShowExplicacao] = useState(false);
 
-  const tipoQuestao = detectarTipoQuestao(alternativas);
+  // Detecta tipo passando também o enunciado para melhor detecção de associação
+  const tipoQuestao = detectarTipoQuestao(alternativas, pergunta);
 
   // Reset ao mudar de questão
   useEffect(() => {
@@ -588,7 +615,7 @@ const QuestaoCard = ({
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-violet-400 text-xs font-medium"
               style={{
@@ -771,13 +798,13 @@ const QuestaoCard = ({
             </div>
           )}
 
-          {/* Botão próxima */}
+          {/* Botão próxima / ver resultado / continuar */}
           <button
             onClick={onProxima}
             className="btn-primary w-full rounded-2xl py-3.5 text-sm font-bold text-white"
             style={{ fontFamily: "Syne, sans-serif" }}
           >
-            {podePular ? (
+            {temProxima ? (
               <span className="flex items-center justify-center gap-2">
                 Próxima questão
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -785,7 +812,9 @@ const QuestaoCard = ({
                 </svg>
               </span>
             ) : (
-              <span>🏁 Ver Resultado</span>
+              <span className="flex items-center justify-center gap-2">
+                🏁 Ver Resultado
+              </span>
             )}
           </button>
         </div>

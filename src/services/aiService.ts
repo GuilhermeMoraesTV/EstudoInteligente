@@ -34,7 +34,6 @@ async function chamarGemini(prompt: string, temperature = 0.4): Promise<string> 
       generationConfig: {
         temperature,
         maxOutputTokens: 8192,
-        // SEM responseMimeType — o parser abaixo trata qualquer saída
       },
     }),
   });
@@ -84,11 +83,6 @@ export interface RespostaIA {
 // PARSER DE JSON ROBUSTO
 // ============================================================
 
-/**
- * Percorre o JSON caractere a caractere.
- * Dentro de strings escapa \n \r \t reais e descarta
- * outros caracteres de controle (< 0x20).
- */
 function sanitizarStringsJSON(json: string): string {
   let resultado = "";
   let dentroString = false;
@@ -137,32 +131,24 @@ function sanitizarStringsJSON(json: string): string {
 }
 
 function extrairJSON(texto: string): string {
-  // 1. Remove blocos markdown
   let limpo = texto
     .replace(/```json\s*/gi, "")
     .replace(/```\s*/gi, "")
     .trim();
 
-  // 2. Isola o bloco JSON principal
   const inicioObj = limpo.indexOf("{");
   const fimObj = limpo.lastIndexOf("}");
   if (inicioObj !== -1 && fimObj !== -1) {
     limpo = limpo.substring(inicioObj, fimObj + 1);
   }
 
-  // 3. Troca aspas tipográficas por aspas retas
   limpo = limpo
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/[\u2018\u2019]/g, "'");
 
-  // 4. Remove trailing commas
   limpo = limpo.replace(/,\s*([}\]])/g, "$1");
-
-  // 5. Remove strings vazias órfãs
   limpo = limpo.replace(/,\s*""\s*}/g, "}");
   limpo = limpo.replace(/,\s*""\s*]/g, "]");
-
-  // 6. Sanitiza caracteres de controle dentro de strings
   limpo = sanitizarStringsJSON(limpo);
 
   return limpo;
@@ -182,16 +168,6 @@ function amostrarTexto(texto: string, maxChars = 20000): string {
   return `${inicio}\n\n[...]\n\n${meio}\n\n[...]\n\n${fim}`;
 }
 
-/**
- * Extrai o trecho mais relevante do texto original para um dado assunto.
- * NUNCA passa pelo JSON do Gemini — elimina de vez o erro de aspas no "trecho".
- *
- * Estratégia:
- * 1. Divide o texto em parágrafos
- * 2. Pontua cada parágrafo pelas palavras-chave do título/descrição
- * 3. Retorna o parágrafo mais relevante com >= minChars caracteres
- * 4. Fallback: primeiro parágrafo longo; depois início do texto
- */
 function extrairTrechoLocal(
   textoOriginal: string,
   titulo: string,
@@ -231,18 +207,6 @@ function extrairTrechoLocal(
 
 // ============================================================
 // MAPEAMENTO DE ASSUNTOS
-// ============================================================
-//
-// CORREÇÃO DEFINITIVA DO ERRO DE JSON:
-//
-// Antes: o Gemini retornava o campo "trecho" dentro do JSON.
-// O trecho vem do PDF do usuário e pode conter aspas duplas ("texto"),
-// hífens duplos, colchetes, e outros caracteres que quebram o JSON.
-// Nenhum parser consegue corrigir aspas não-escapadas de forma confiável.
-//
-// Agora: o prompt NÃO pede "trecho" ao Gemini — só pede titulo e descricao
-// (strings curtas e controladas). O trecho é extraído do texto original
-// pelo código, via extrairTrechoLocal(), sem jamais passar pelo JSON.
 // ============================================================
 
 export const mapearAssuntos = async (
@@ -323,7 +287,6 @@ ${textoAmostrado}`;
         id: `assunto_${i + 1}`,
         titulo: a.titulo,
         descricao: a.descricao,
-        // ✅ Trecho extraído localmente — sem passar pelo JSON do Gemini
         trecho: extrairTrechoLocal(textoLimpo, a.titulo, a.descricao),
       })),
     };
@@ -350,7 +313,8 @@ ${textoAmostrado}`;
 export const gerarConteudoParaAssunto = async (
   assunto: Assunto,
   tipoQuestao: "simples" | "elaborada" = "elaborada",
-  quantidadeQuestoes = 5
+  quantidadeQuestoes = 5,
+  errosRecentes?: string[] // perguntas que o aluno errou para geração adaptativa
 ): Promise<RespostaIA> => {
   const textoBase = assunto.trecho.trim();
   const usarConhecimentoIA = textoBase.length < 200;
@@ -361,11 +325,33 @@ Use seu conhecimento sobre este assunto para gerar questões de alto nível para
     : `CONTEÚDO DE REFERÊNCIA (NÃO mencione o material, apostila ou texto nas questões):
 ${textoBase.substring(0, 5000)}`;
 
+  const contextoAdaptativo = errosRecentes && errosRecentes.length > 0
+    ? `\nFOCO ADAPTATIVO: O aluno errou questões sobre os seguintes pontos — gere questões que reforcem esses temas:
+${errosRecentes.slice(0, 3).map((e, i) => `${i + 1}. ${e.substring(0, 120)}`).join("\n")}\n`
+    : "";
+
   const regraJSON = `REGRAS CRÍTICAS DE FORMATO JSON:
 - Retorne APENAS JSON puro, sem markdown, sem blocos de código
 - Use \\n para separar linhas na explicacao — NUNCA quebre linha real dentro de uma string
 - Não use aspas duplas dentro dos valores de string — reescreva sem elas
 - Cada string deve estar em uma única linha`;
+
+  // Distribuição de tipos de questão para tornar a prova mais variada
+  // Para modo concurso: ~40% múltipla escolha, ~30% certo/errado, ~30% associação (I II III IV)
+  // Para modo flash: ~60% múltipla escolha, ~40% certo/errado
+  const instrucoesTipos = tipoQuestao === "elaborada"
+    ? `VARIEDADE DE TIPOS — distribua as ${quantidadeQuestoes} questões assim:
+- ${Math.ceil(quantidadeQuestoes * 0.4)} questões de múltipla escolha clássica (5 alternativas A-E)
+- ${Math.floor(quantidadeQuestoes * 0.3)} questões de Certo/Errado (2 alternativas: "A) Certo" e "B) Errado")
+- ${Math.floor(quantidadeQuestoes * 0.3)} questões de Associação/Julgamento com itens I, II, III, IV no enunciado e alternativas como "A) Apenas I e II" / "B) Apenas III" / etc.
+
+Para questões de Associação, formato do enunciado:
+"Sobre [tema], julgue os itens abaixo:\\nI. Afirmativa correta ou incorreta.\\nII. Afirmativa correta ou incorreta.\\nIII. Afirmativa correta ou incorreta.\\nIV. Afirmativa correta ou incorreta.\\nEstão CORRETOS apenas:"
+E as alternativas devem ser combinações como:
+"A) I e II", "B) I, II e III", "C) II e IV", "D) Apenas III", "E) Todos estão corretos"`
+    : `VARIEDADE DE TIPOS — distribua as ${quantidadeQuestoes} questões assim:
+- ${Math.ceil(quantidadeQuestoes * 0.6)} questões de múltipla escolha (5 alternativas A-E, respostas curtas)
+- ${Math.floor(quantidadeQuestoes * 0.4)} questões de Certo/Errado (2 alternativas: "A) Certo" e "B) Errado")`;
 
   // ── MODO FLASH ──
   const promptFlash = `Você é elaborador de questões de memorização para concursos públicos brasileiros.
@@ -373,7 +359,7 @@ ${textoBase.substring(0, 5000)}`;
 ASSUNTO: ${assunto.titulo}
 
 ${fonteDados}
-
+${contextoAdaptativo}
 OBJETIVO: Questões CURTAS e DIRETAS sobre conceitos, penas, datas, números, classificações.
 
 REGRAS:
@@ -382,9 +368,11 @@ REGRAS:
 3. NÃO mencione o texto ou material
 4. Resposta em menos de 20 segundos
 
+${instrucoesTipos}
+
 ${regraJSON}
 
-Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards.
+Gere exatamente ${quantidadeQuestoes} questões e ${quantidadeQuestoes} flashcards.
 
 {"resumo":"Síntese dos pontos-chave","questoes":[{"pergunta":"Enunciado curto","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: definicao\\n💡 Dica: mneumonico","tipo":"simples"}],"flashcards":[{"frente":"Pergunta curta","verso":"Resposta direta"}]}`;
 
@@ -394,7 +382,7 @@ Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, 
 ASSUNTO: ${assunto.titulo}
 
 ${fonteDados}
-
+${contextoAdaptativo}
 INSTRUÇÕES:
 1. NUNCA mencione o texto ou material — questões autossuficientes
 2. Situações-problema reais e casos concretos
@@ -402,9 +390,11 @@ INSTRUÇÕES:
 4. Alternativas incorretas com erros sutis
 5. Varie verbos: analise, julgue, identifique, assinale
 
+${instrucoesTipos}
+
 ${regraJSON}
 
-Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards.
+Gere exatamente ${quantidadeQuestoes} questões e ${quantidadeQuestoes} flashcards.
 
 {"resumo":"Síntese dos pontos principais","questoes":[{"pergunta":"Enunciado completo com situação-problema","alternativas":["A) texto","B) texto","C) texto","D) texto","E) texto"],"correta":"A) texto exato","explicacao":"✅ CORRETA A: motivo detalhado\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica Prova: estrategia","tipo":"elaborada"}],"flashcards":[{"frente":"Pergunta objetiva","verso":"Resposta direta"}]}`;
 

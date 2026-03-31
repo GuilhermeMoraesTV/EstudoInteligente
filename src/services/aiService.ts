@@ -61,25 +61,14 @@ function extrairJSON(texto: string): string {
   return limpo;
 }
 
-// ============================================================
-// MAPEAMENTO DE ASSUNTOS — ESTRATÉGIA RÁPIDA EM UMA CHAMADA
-// ============================================================
-// Otimização: em vez de múltiplas chamadas por chunk, fazemos
-// UMA única chamada com o texto amostrado inteligentemente.
-// Para PDFs grandes, pegamos início, meio e fim do texto.
-// ============================================================
-
 function amostrarTexto(texto: string, maxChars = 20000): string {
   if (texto.length <= maxChars) return texto;
-
-  // Pega início, meio e fim do texto para cobrir todo o conteúdo
   const terco = Math.floor(maxChars / 3);
   const inicio = texto.substring(0, terco);
   const meioStart = Math.floor(texto.length / 2) - Math.floor(terco / 2);
   const meio = texto.substring(meioStart, meioStart + terco);
   const fimStart = texto.length - terco;
   const fim = texto.substring(fimStart);
-
   return `${inicio}\n\n[...]\n\n${meio}\n\n[...]\n\n${fim}`;
 }
 
@@ -180,20 +169,61 @@ Use seu conhecimento sobre este assunto para gerar questões de alto nível para
     : `CONTEÚDO DE REFERÊNCIA (NÃO mencione o material, apostila ou texto nas questões):
 ${textoBase.substring(0, 5000)}`;
 
-  const instrucaoExplicacao = tipoQuestao === "elaborada"
-    ? `Para cada questão, a explicação deve ter OBRIGATORIAMENTE este formato exato (uma linha por item, separados por \\n):
-✅ CORRETA [LETRA]: [motivo detalhado de por que está correta]
-❌ [LETRA]: [por que esta alternativa está errada — erro técnico específico]
-❌ [LETRA]: [por que esta alternativa está errada]
-❌ [LETRA]: [por que esta alternativa está errada]
-❌ [LETRA]: [por que esta alternativa está errada]
-📌 Conceito-chave: [regra, lei ou fundamento técnico]
-💡 Dica Prova: [estratégia de memorização ou pegadinha recorrente]`
-    : `Para cada questão, a explicação deve seguir este formato (em uma única linha com \\n separando):
-✅ [razão objetiva e direta da resposta correta]
-📌 Regra: [conceito fundamental em negrito se possível]
-💡 Lembre-se: [mnemônico ou dica rápida]`;
+  // ── MODO FLASH: memorização rápida de conceitos, datas, penas, definições ──
+  const promptFlash = `Você é elaborador de questões de memorização para concursos públicos brasileiros.
 
+ASSUNTO: ${assunto.titulo}
+
+${fonteDados}
+
+OBJETIVO DO MODO FLASH:
+Questões CURTAS e DIRETAS focadas em memorização de:
+- Conceitos e definições objetivas
+- Penas e punições (ex: "A pena para X é de Y anos")
+- Datas e prazos legais
+- Números, percentuais e limites
+- Classificações e categorias
+- Sinônimos técnicos e nomenclaturas
+
+REGRAS OBRIGATÓRIAS:
+1. Enunciados CURTOS — máximo 2 linhas, direto ao ponto
+2. NÃO use situações-problema longas — foco em "O que é X?" / "Qual a pena de Y?" / "Em quanto tempo Z?"
+3. Alternativas curtas — máximo 1 linha cada
+4. NÃO mencione "o texto", "o material" ou "a apostila"
+5. Velocidade: o aluno deve conseguir responder em menos de 20 segundos
+
+FORMATO DA EXPLICAÇÃO (obrigatório, use exatamente este template):
+✅ CORRETA [LETRA]: [motivo direto e objetivo]
+❌ [LETRA]: [por que está errada — em uma linha]
+❌ [LETRA]: [por que está errada — em uma linha]
+❌ [LETRA]: [por que está errada — em uma linha]
+❌ [LETRA]: [por que está errada — em uma linha]
+📌 Conceito-chave: [regra ou definição para memorizar]
+💡 Dica: [mnemônico, associação ou pegadinha comum]
+
+Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards CONCISOS.
+
+Retorne APENAS JSON puro válido sem markdown:
+{
+  "resumo": "Síntese dos pontos-chave para memorização",
+  "questoes": [
+    {
+      "pergunta": "Enunciado curto e direto (máx 2 linhas)",
+      "alternativas": ["A) resposta curta", "B) resposta curta", "C) resposta curta", "D) resposta curta", "E) resposta curta"],
+      "correta": "A) texto exato da alternativa correta",
+      "explicacao": "✅ CORRETA A: motivo direto\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: definição\\n💡 Dica: mnemônico",
+      "tipo": "simples"
+    }
+  ],
+  "flashcards": [
+    {
+      "frente": "Pergunta curta e objetiva",
+      "verso": "Resposta direta (máx 2 linhas)"
+    }
+  ]
+}`;
+
+  // ── MODO CONCURSO: estilo CESPE/FCC com situações-problema ──
   const promptConcurso = `Você é elaborador sênior de provas de concursos públicos brasileiros (CESPE/CEBRASPE, FCC, VUNESP, FGV).
 
 ASSUNTO: ${assunto.titulo}
@@ -208,32 +238,41 @@ INSTRUÇÕES PARA AS QUESTÕES:
 4. Alternativas incorretas devem ter erros sutis e plausíveis
 5. Varie verbos: analise, julgue, identifique, assinale, é correto afirmar...
 
-${instrucaoExplicacao}
+FORMATO DA EXPLICAÇÃO (obrigatório, use exatamente este template):
+✅ CORRETA [LETRA]: [motivo detalhado de por que está correta]
+❌ [LETRA]: [por que esta alternativa está errada — erro técnico específico]
+❌ [LETRA]: [por que esta alternativa está errada]
+❌ [LETRA]: [por que esta alternativa está errada]
+❌ [LETRA]: [por que esta alternativa está errada]
+📌 Conceito-chave: [regra, lei ou fundamento técnico]
+💡 Dica Prova: [estratégia de memorização ou pegadinha recorrente]
 
-Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards.
+Gere exatamente ${quantidadeQuestoes} questões com 5 alternativas (A, B, C, D, E) e ${quantidadeQuestoes} flashcards CONCISOS.
 
 Retorne APENAS JSON puro válido sem markdown:
 {
   "resumo": "Síntese dos pontos principais em 2-3 frases",
   "questoes": [
     {
-      "pergunta": "Enunciado completo e autossuficiente",
+      "pergunta": "Enunciado completo e autossuficiente com situação-problema",
       "alternativas": ["A) texto completo", "B) texto completo", "C) texto completo", "D) texto completo", "E) texto completo"],
       "correta": "A) texto exato da alternativa correta",
-      "explicacao": "Explicação formatada conforme template acima",
-      "tipo": "${tipoQuestao}"
+      "explicacao": "✅ CORRETA A: motivo detalhado\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica Prova: estratégia",
+      "tipo": "elaborada"
     }
   ],
   "flashcards": [
     {
-      "frente": "Conceito ou pergunta sobre ${assunto.titulo}",
-      "verso": "Resposta precisa e completa"
+      "frente": "Pergunta curta e objetiva sobre ${assunto.titulo}",
+      "verso": "Resposta direta e objetiva (máx 2 linhas)"
     }
   ]
 }`;
 
+  const promptEscolhido = tipoQuestao === "simples" ? promptFlash : promptConcurso;
+
   try {
-    const raw = await chamarGemini(promptConcurso, 0.6);
+    const raw = await chamarGemini(promptEscolhido, 0.6);
     const json = extrairJSON(raw);
     const dados: RespostaIA = JSON.parse(json);
 
@@ -246,12 +285,17 @@ Retorne APENAS JSON puro válido sem markdown:
     console.error("Erro ao gerar conteúdo:", e);
 
     try {
-      const promptFallback = `Elabore ${quantidadeQuestoes} questões de concurso público sobre "${assunto.titulo}" (${tipoQuestao === "elaborada" ? "estilo CESPE com situações-problema" : "memorização direta"}).
-Questões autossuficientes, sem mencionar material ou texto.
-Explicação no formato: ✅ CORRETA X: motivo\\n❌ Y: motivo\\n📌 Conceito: fundamento\\n💡 Dica: memorização
+      const promptFallback = tipoQuestao === "simples"
+        ? `Elabore ${quantidadeQuestoes} questões de memorização sobre "${assunto.titulo}" — curtas, sobre definições, penas, datas, números. Enunciados de no máximo 2 linhas.
+Explicação formato: ✅ CORRETA X: motivo\\n❌ Y: motivo\\n📌 Conceito: definição\\n💡 Dica: mnemônico
 
 JSON APENAS:
-{"resumo":"síntese","questoes":[{"pergunta":"enunciado","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: fundamento","tipo":"${tipoQuestao}"}],"flashcards":[{"frente":"conceito","verso":"definição"}]}`;
+{"resumo":"pontos-chave","questoes":[{"pergunta":"Qual é X?","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: definição\\n💡 Dica: mnemônico","tipo":"simples"}],"flashcards":[{"frente":"pergunta curta","verso":"resposta direta"}]}`
+        : `Elabore ${quantidadeQuestoes} questões de concurso público estilo CESPE sobre "${assunto.titulo}" com situações-problema.
+Explicação: ✅ CORRETA X: motivo\\n❌ Y: motivo\\n📌 Conceito: fundamento\\n💡 Dica: estratégia
+
+JSON APENAS:
+{"resumo":"síntese","questoes":[{"pergunta":"Assinale a alternativa correta sobre X:","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: fundamento\\n💡 Dica Prova: estratégia","tipo":"elaborada"}],"flashcards":[{"frente":"pergunta curta","verso":"resposta direta"}]}`;
 
       const raw2 = await chamarGemini(promptFallback, 0.5);
       const json2 = extrairJSON(raw2);
@@ -278,9 +322,17 @@ export const gerarReforcoParaQuestao = async (
 O aluno precisa de reforço sobre "${assunto}". Questão de referência:
 "${perguntaOriginal}"
 
-Gere 3 questões de reforço sobre este mesmo conceito (ângulos diferentes) e 3 flashcards.
+Gere 3 questões de reforço sobre este mesmo conceito (ângulos diferentes) e 3 flashcards CONCISOS.
 Questões autossuficientes — NÃO mencione o material ou texto.
-Explicações no formato: ✅ CORRETA X: motivo\\n❌ Y: motivo\\n📌 Conceito: fundamento\\n💡 Dica: memorização
+
+FORMATO DA EXPLICAÇÃO (obrigatório):
+✅ CORRETA [LETRA]: motivo direto
+❌ [LETRA]: por que está errada
+❌ [LETRA]: por que está errada
+❌ [LETRA]: por que está errada
+❌ [LETRA]: por que está errada
+📌 Conceito-chave: fundamento técnico
+💡 Dica: mnemônico ou estratégia
 
 JSON APENAS:
 {
@@ -290,14 +342,14 @@ JSON APENAS:
       "pergunta": "Questão de reforço autossuficiente",
       "alternativas": ["A) texto", "B) texto", "C) texto", "D) texto", "E) texto"],
       "correta": "A) texto exato",
-      "explicacao": "✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: fundamento\\n💡 Dica: memorização",
+      "explicacao": "✅ CORRETA A: motivo\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica: mnemônico",
       "tipo": "elaborada"
     }
   ],
   "flashcards": [
     {
-      "frente": "Conceito-chave sobre ${assunto}",
-      "verso": "Definição precisa para memorizar"
+      "frente": "Pergunta curta sobre ${assunto}",
+      "verso": "Resposta direta (máx 2 linhas)"
     }
   ]
 }`;

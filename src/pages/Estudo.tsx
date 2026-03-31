@@ -1,4 +1,5 @@
 // src/pages/Estudo.tsx
+// PATCH: importa ResultScreen de ResultScreenEstudo.tsx
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -14,11 +15,11 @@ import {
 } from "../services/firebaseService";
 import {
   gerarConteudoParaAssunto,
-  gerarFeedbackDesempenho,
   gerarReforcoParaQuestao,
 } from "../services/aiService";
 import Navbar from "../components/Navbar";
 import QuestaoCard from "../components/QuestaoCard";
+import ResultScreen from "./ResultScreenEstudo";
 
 type TipoEstudo = "simples" | "elaborada";
 
@@ -89,12 +90,9 @@ const AguardandoIA = ({ tipoEstudo }: { tipoEstudo: TipoEstudo }) => {
       <div className="fixed bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/8 rounded-full blur-[120px]" />
 
       <div className="relative z-10 flex flex-col items-center gap-8 px-4 text-center max-w-md">
-        {/* Orb animado */}
         <div className="relative w-28 h-28">
           <div className="absolute inset-0 rounded-full border-2 border-violet-500/20 animate-spin-slow" />
           <div className="absolute inset-2 rounded-full border-2 border-indigo-500/15 animate-spin-slow" style={{ animationDirection: "reverse", animationDuration: "6s" }} />
-
-          {/* Orbiting dots */}
           <div className="absolute inset-0">
             {[0, 1, 2].map((i) => (
               <div
@@ -109,12 +107,9 @@ const AguardandoIA = ({ tipoEstudo }: { tipoEstudo: TipoEstudo }) => {
               />
             ))}
           </div>
-
           <div className="absolute inset-0 flex items-center justify-center">
-            <div
-              className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-500 flex items-center justify-center animate-brain-pulse"
-              style={{ boxShadow: "0 0 30px rgba(139,92,246,0.5)" }}
-            >
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-500 flex items-center justify-center animate-brain-pulse"
+              style={{ boxShadow: "0 0 30px rgba(139,92,246,0.5)" }}>
               <span className="text-2xl">🧠</span>
             </div>
           </div>
@@ -125,15 +120,9 @@ const AguardandoIA = ({ tipoEstudo }: { tipoEstudo: TipoEstudo }) => {
             <span className="text-gradient">IA gerando questões</span>
             <span className="text-violet-400">{".".repeat(dots + 1)}</span>
           </h2>
-          <p
-            key={dica}
-            className="text-sm text-muted-foreground animate-fade-in"
-          >
-            {dicas[dica]}
-          </p>
+          <p key={dica} className="text-sm text-muted-foreground animate-fade-in">{dicas[dica]}</p>
         </div>
 
-        {/* Barra de progresso indeterminada */}
         <div className="w-full max-w-xs">
           <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
             <div
@@ -151,18 +140,14 @@ const AguardandoIA = ({ tipoEstudo }: { tipoEstudo: TipoEstudo }) => {
           </p>
         </div>
 
-        {/* Tipos sendo gerados */}
         <div className="flex gap-2 flex-wrap justify-center">
           {[
             { icon: "🎯", label: "Múltipla escolha" },
             { icon: "✓✗", label: "Certo/Errado" },
             { icon: "🔗", label: "Associação I-IV" },
           ].map((t, i) => (
-            <div
-              key={t.label}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass text-xs text-muted-foreground border border-white/8"
-              style={{ animationDelay: `${i * 200}ms` }}
-            >
+            <div key={t.label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass text-xs text-muted-foreground border border-white/8"
+              style={{ animationDelay: `${i * 200}ms` }}>
               <span>{t.icon}</span>
               <span>{t.label}</span>
             </div>
@@ -176,19 +161,10 @@ const AguardandoIA = ({ tipoEstudo }: { tipoEstudo: TipoEstudo }) => {
 // ─── Seleção de tipo ──────────────────────────────────────────────────────────
 
 const SelecaoTipo = ({
-  assunto,
-  material,
-  onEscolher,
-  assuntos,
-  assuntoAtual,
-  onTrocarAssunto,
+  assunto, material, onEscolher, assuntos, assuntoAtual, onTrocarAssunto,
 }: {
-  assunto: AssuntoSalvo;
-  material: Material;
-  onEscolher: (tipo: TipoEstudo) => void;
-  assuntos: AssuntoSalvo[];
-  assuntoAtual: string;
-  onTrocarAssunto: (id: string) => void;
+  assunto: AssuntoSalvo; material: Material; onEscolher: (tipo: TipoEstudo) => void;
+  assuntos: AssuntoSalvo[]; assuntoAtual: string; onTrocarAssunto: (id: string) => void;
 }) => {
   const navigate = useNavigate();
   return (
@@ -197,10 +173,8 @@ const SelecaoTipo = ({
       <Navbar />
       <main className="relative mx-auto max-w-3xl px-4 pt-24 pb-16">
         <div className="mb-6">
-          <button
-            onClick={() => navigate(`/estudos/${material.id}`)}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors"
-          >
+          <button onClick={() => navigate(`/estudos/${material.id}`)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -218,20 +192,15 @@ const SelecaoTipo = ({
 
         {assuntos.length > 1 && (
           <div className="mb-8 animate-fade-in-up" style={{ animationDelay: "100ms" }}>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">
-              Outros assuntos
-            </p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Outros assuntos</p>
             <div className="flex flex-col gap-2">
               {assuntos.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => onTrocarAssunto(a.id)}
+                <button key={a.id} onClick={() => onTrocarAssunto(a.id)}
                   className={`px-3 py-2 rounded-xl text-sm font-medium transition-all border text-left ${
                     a.id === assuntoAtual
                       ? "bg-violet-500/20 border-violet-500/50 text-violet-300"
                       : "border-white/10 text-muted-foreground hover:border-violet-500/30 hover:text-white"
-                  }`}
-                >
+                  }`}>
                   {a.titulo}
                 </button>
               ))}
@@ -240,47 +209,31 @@ const SelecaoTipo = ({
         )}
 
         <div className="animate-fade-in-up" style={{ animationDelay: "200ms" }}>
-          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-4">
-            Escolha o modo
-          </p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-4">Escolha o modo</p>
           <div className="grid grid-cols-2 gap-4">
-            {/* Flash */}
-            <button
-              onClick={() => onEscolher("simples")}
+            <button onClick={() => onEscolher("simples")}
               className="group relative overflow-hidden rounded-2xl p-6 text-left border border-white/10 hover:border-blue-500/50 transition-all"
-              style={{ background: "rgba(255,255,255,0.02)" }}
-            >
+              style={{ background: "rgba(255,255,255,0.02)" }}>
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(99,102,241,0.06))" }} />
               <div className="relative">
                 <div className="w-12 h-12 rounded-xl mb-4 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform"
-                  style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.25)" }}>
-                  ⚡
-                </div>
+                  style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.25)" }}>⚡</div>
                 <h3 className="font-bold text-white text-sm" style={{ fontFamily: "Syne, sans-serif" }}>Flash</h3>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  Questões curtas e diretas. Resposta rápida.
-                </p>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">Questões curtas e diretas. Resposta rápida.</p>
               </div>
             </button>
 
-            {/* Concurso */}
-            <button
-              onClick={() => onEscolher("elaborada")}
+            <button onClick={() => onEscolher("elaborada")}
               className="group relative overflow-hidden rounded-2xl p-6 text-left border border-white/10 hover:border-violet-500/50 transition-all"
-              style={{ background: "rgba(255,255,255,0.02)" }}
-            >
+              style={{ background: "rgba(255,255,255,0.02)" }}>
               <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 style={{ background: "linear-gradient(135deg, rgba(124,58,237,0.12), rgba(99,102,241,0.06))" }} />
               <div className="relative">
                 <div className="w-12 h-12 rounded-xl mb-4 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform"
-                  style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.25)" }}>
-                  🎯
-                </div>
+                  style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.25)" }}>🎯</div>
                 <h3 className="font-bold text-white text-sm" style={{ fontFamily: "Syne, sans-serif" }}>Concurso</h3>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  Estilo CESPE/FCC com gabarito comentado. Inclui I, II, III, IV.
-                </p>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">Estilo CESPE/FCC com gabarito comentado. Inclui I, II, III, IV.</p>
               </div>
             </button>
           </div>
@@ -305,12 +258,11 @@ const LoadingQuestoes = ({ mensagem }: { mensagem: string }) => (
   </div>
 );
 
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const QUESTOES_LOTE = 5; // questões por lote de geração
-const QUESTOES_META = 10; // meta inicial antes do primeiro "ver resultado"
-const THRESHOLD_ADAPTATIVO = Math.floor(QUESTOES_META / 2); // na metade, gera próximo lote
+const QUESTOES_LOTE = 5;
+const QUESTOES_META = 10;
+const THRESHOLD_ADAPTATIVO = Math.floor(QUESTOES_META / 2);
 
 const Estudo = () => {
   const { materialId, assuntoId } = useParams<{ materialId: string; assuntoId: string }>();
@@ -322,7 +274,7 @@ const Estudo = () => {
   const [tipoEstudo, setTipoEstudo] = useState<TipoEstudo | null>(null);
   const [questoes, setQuestoes] = useState<Questao[]>([]);
   const [carregandoMais, setCarregandoMais] = useState(false);
-  const [aguardandoIA, setAguardandoIA] = useState(false); // loading quando usuário chega no fim antes da IA terminar
+  const [aguardandoIA, setAguardandoIA] = useState(false);
   const [indiceAtual, setIndiceAtual] = useState(0);
   const [respondida, setRespondida] = useState(false);
   const [acertouAtual, setAcertouAtual] = useState<boolean | null>(null);
@@ -336,33 +288,21 @@ const Estudo = () => {
   const [reforcoGerado, setReforcoGerado] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [toastVisivel, setToastVisivel] = useState(false);
-
-  // questões puladas
   const [puladas, setPuladas] = useState<number[]>([]);
   const [modoRevisaoPuladas, setModoRevisaoPuladas] = useState(false);
   const [revisandoPuladaIdx, setRevisandoPuladaIdx] = useState(0);
-
-  // questão revelada
   const [questaoRevelada, setQuestaoRevelada] = useState(false);
 
-  // controle de geração adaptativa
-  const gerandoMaisRef = useRef(false); // evita dupla geração
-  const errosRef = useRef<string[]>([]); // perguntas erradas para adaptativo
-  const questoesRef = useRef<Questao[]>([]); // ref síncrona para questoes
-
+  const gerandoMaisRef = useRef(false);
+  const errosRef = useRef<string[]>([]);
+  const questoesRef = useRef<Questao[]>([]);
   const tempoInicio = useRef<number>(Date.now());
 
-  // Mantém ref sincronizada
-  useEffect(() => {
-    questoesRef.current = questoes;
-  }, [questoes]);
+  useEffect(() => { questoesRef.current = questoes; }, [questoes]);
 
   const mostrarToast = useCallback((msg: string) => {
-    setToastMsg(msg);
-    setToastVisivel(true);
+    setToastMsg(msg); setToastVisivel(true);
   }, []);
-
-  // ── Carrega material ──────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!materialId) return;
@@ -376,8 +316,6 @@ const Estudo = () => {
     });
   }, [materialId, assuntoId]);
 
-  // ── Troca de assunto ──────────────────────────────────────────────────────
-
   const handleTrocarAssunto = (id: string) => {
     if (!material) return;
     navigate(`/estudo/${materialId}/${id}`, { replace: true });
@@ -385,383 +323,185 @@ const Estudo = () => {
     setAssuntoAtual(a || null);
     resetSessao();
     setTipoEstudo(null);
-    setQuestoes([]);
-    questoesRef.current = [];
+    setQuestoes([]); questoesRef.current = [];
     errosRef.current = [];
   };
 
   const resetSessao = () => {
-    setIndiceAtual(0);
-    setRespondida(false);
-    setAcertouAtual(null);
-    setQuestaoRevelada(false);
-    setAcertos(0);
-    setTotalRespondidas(0);
-    setTotalPuladas(0);
-    setPuladas([]);
-    setModoRevisaoPuladas(false);
-    setRevisandoPuladaIdx(0);
-    setSessaoFinalizada(false);
-    setReforcoGerado(false);
-    setAguardandoIA(false);
-    gerandoMaisRef.current = false;
-    errosRef.current = [];
+    setIndiceAtual(0); setRespondida(false); setAcertouAtual(null); setQuestaoRevelada(false);
+    setAcertos(0); setTotalRespondidas(0); setTotalPuladas(0);
+    setPuladas([]); setModoRevisaoPuladas(false); setRevisandoPuladaIdx(0);
+    setSessaoFinalizada(false); setReforcoGerado(false); setAguardandoIA(false);
+    gerandoMaisRef.current = false; errosRef.current = [];
     tempoInicio.current = Date.now();
   };
 
-  // ── Geração de mais questões (adaptativa) ─────────────────────────────────
-
   const gerarMaisQuestoes = useCallback(async (
-    assunto: AssuntoSalvo,
-    tipo: TipoEstudo,
-    matId: string,
-    matTitulo?: string
+    assunto: AssuntoSalvo, tipo: TipoEstudo, matId: string, matTitulo?: string
   ) => {
     if (gerandoMaisRef.current) return;
     gerandoMaisRef.current = true;
     setCarregandoMais(true);
-
     try {
       const erros = errosRef.current.slice(0, 3);
       const resposta = await gerarConteudoParaAssunto(assunto, tipo, QUESTOES_LOTE, erros.length > 0 ? erros : undefined);
-
       if (resposta.questoes.length === 0) return;
-
-      const ids = await salvarQuestoes(
-        usuario!.uid, matId, assunto.id, assunto.titulo,
-        resposta.questoes
-      );
-
-      await salvarFlashcards(
-        usuario!.uid, matId, assunto.id, assunto.titulo,
-        resposta.flashcards, "gerado", matTitulo
-      );
-
+      const ids = await salvarQuestoes(usuario!.uid, matId, assunto.id, assunto.titulo, resposta.questoes);
+      await salvarFlashcards(usuario!.uid, matId, assunto.id, assunto.titulo, resposta.flashcards, "gerado", matTitulo);
       const novasQuestoes: Questao[] = resposta.questoes.map((q, i) => ({
-        id: ids[i],
-        userId: usuario!.uid,
-        materialId: matId,
-        assuntoId: assunto.id,
-        assuntoTitulo: assunto.titulo,
-        pergunta: q.pergunta,
-        alternativas: q.alternativas,
-        correta: q.correta,
-        explicacao: q.explicacao,
-        tipo: q.tipo || tipo,
-        criadoEm: {} as any,
+        id: ids[i], userId: usuario!.uid, materialId: matId,
+        assuntoId: assunto.id, assuntoTitulo: assunto.titulo,
+        pergunta: q.pergunta, alternativas: q.alternativas,
+        correta: q.correta, explicacao: q.explicacao,
+        tipo: q.tipo || tipo, criadoEm: {} as any,
       }));
-
-      setQuestoes((prev) => {
-        const novaLista = [...prev, ...novasQuestoes];
-        questoesRef.current = novaLista;
-        return novaLista;
-      });
-
-      // Se estava aguardando a IA, desbloqueia
+      setQuestoes((prev) => { const l = [...prev, ...novasQuestoes]; questoesRef.current = l; return l; });
       setAguardandoIA(false);
     } catch (e) {
       console.error("Erro ao gerar mais questões:", e);
       setAguardandoIA(false);
     } finally {
-      setCarregandoMais(false);
-      gerandoMaisRef.current = false;
+      setCarregandoMais(false); gerandoMaisRef.current = false;
     }
   }, [usuario]);
 
-  // ── Escolhe tipo e gera questões iniciais ─────────────────────────────────
-
   const handleEscolherTipo = async (tipo: TipoEstudo) => {
     if (!usuario || !assuntoAtual || !materialId) return;
-    setTipoEstudo(tipo);
-    setGerandoPrimeiras(true);
-    resetSessao();
-
+    setTipoEstudo(tipo); setGerandoPrimeiras(true); resetSessao();
     try {
       const salvas = await buscarQuestoesPorAssunto(usuario.uid, materialId, assuntoAtual.id);
       const doTipo = salvas.filter((q) => q.tipo === tipo);
-
       if (doTipo.length >= QUESTOES_LOTE) {
         const lista = doTipo.sort(() => Math.random() - 0.5).slice(0, QUESTOES_META);
-        setQuestoes(lista);
-        questoesRef.current = lista;
-        setGerandoPrimeiras(false);
-        return;
+        setQuestoes(lista); questoesRef.current = lista; setGerandoPrimeiras(false); return;
       }
-
-      // Gera primeiro lote
       const respostaPrimeira = await gerarConteudoParaAssunto(assuntoAtual, tipo, QUESTOES_LOTE);
-      const ids = await salvarQuestoes(
-        usuario.uid, materialId, assuntoAtual.id, assuntoAtual.titulo,
-        respostaPrimeira.questoes
-      );
-
+      const ids = await salvarQuestoes(usuario.uid, materialId, assuntoAtual.id, assuntoAtual.titulo, respostaPrimeira.questoes);
       const primeiroLote: Questao[] = respostaPrimeira.questoes.map((q, i) => ({
-        id: ids[i],
-        userId: usuario.uid,
-        materialId: materialId!,
-        assuntoId: assuntoAtual.id,
-        assuntoTitulo: assuntoAtual.titulo,
-        pergunta: q.pergunta,
-        alternativas: q.alternativas,
-        correta: q.correta,
-        explicacao: q.explicacao,
-        tipo: q.tipo || tipo,
-        criadoEm: {} as any,
+        id: ids[i], userId: usuario.uid, materialId: materialId!,
+        assuntoId: assuntoAtual.id, assuntoTitulo: assuntoAtual.titulo,
+        pergunta: q.pergunta, alternativas: q.alternativas,
+        correta: q.correta, explicacao: q.explicacao,
+        tipo: q.tipo || tipo, criadoEm: {} as any,
       }));
-
-      setQuestoes(primeiroLote);
-      questoesRef.current = primeiroLote;
-      setGerandoPrimeiras(false);
-
-      // Gera segundo lote em background imediatamente
+      setQuestoes(primeiroLote); questoesRef.current = primeiroLote; setGerandoPrimeiras(false);
       gerarMaisQuestoes(assuntoAtual, tipo, materialId!, material?.titulo);
-
-      // Salva flashcards do primeiro lote
-      await salvarFlashcards(
-        usuario.uid, materialId!, assuntoAtual.id, assuntoAtual.titulo,
-        respostaPrimeira.flashcards, "gerado", material?.titulo
-      );
+      await salvarFlashcards(usuario.uid, materialId!, assuntoAtual.id, assuntoAtual.titulo, respostaPrimeira.flashcards, "gerado", material?.titulo);
     } catch (e) {
-      console.error(e);
-      setTipoEstudo(null);
-      setGerandoPrimeiras(false);
+      console.error(e); setTipoEstudo(null); setGerandoPrimeiras(false);
     }
   };
 
-  // ── Helpers de navegação ──────────────────────────────────────────────────
-
   const questaoCorrente = (): Questao | null => {
-    if (modoRevisaoPuladas) {
-      const idx = puladas[revisandoPuladaIdx];
-      return questoes[idx] ?? null;
-    }
+    if (modoRevisaoPuladas) { const idx = puladas[revisandoPuladaIdx]; return questoes[idx] ?? null; }
     return questoes[indiceAtual] ?? null;
   };
 
   const proximaQuestao = () => {
-    setRespondida(false);
-    setAcertouAtual(null);
-    setQuestaoRevelada(false);
-    setReforcoGerado(false);
+    setRespondida(false); setAcertouAtual(null); setQuestaoRevelada(false); setReforcoGerado(false);
     tempoInicio.current = Date.now();
-
     if (modoRevisaoPuladas) {
-      if (revisandoPuladaIdx < puladas.length - 1) {
-        setRevisandoPuladaIdx((p) => p + 1);
-      } else {
-        setSessaoFinalizada(true);
-      }
+      if (revisandoPuladaIdx < puladas.length - 1) setRevisandoPuladaIdx((p) => p + 1);
+      else setSessaoFinalizada(true);
       return;
     }
-
     const proximoIndice = indiceAtual + 1;
-
-    // Verifica se há próxima questão disponível
     if (proximoIndice < questoesRef.current.length) {
       setIndiceAtual(proximoIndice);
-
-      // Gatilho adaptativo: na metade das questões, gera mais
-      if (
-        proximoIndice === THRESHOLD_ADAPTATIVO &&
-        !gerandoMaisRef.current &&
-        tipoEstudo &&
-        assuntoAtual &&
-        materialId
-      ) {
+      if (proximoIndice === THRESHOLD_ADAPTATIVO && !gerandoMaisRef.current && tipoEstudo && assuntoAtual && materialId) {
         gerarMaisQuestoes(assuntoAtual, tipoEstudo, materialId!, material?.titulo);
       }
     } else {
-      // Não há próxima questão disponível
       if (gerandoMaisRef.current || carregandoMais) {
-        // IA ainda está gerando — mostra loading
         setAguardandoIA(true);
-        // Fica verificando até ter questão disponível
         const check = setInterval(() => {
-          if (questoesRef.current.length > proximoIndice) {
-            clearInterval(check);
-            setAguardandoIA(false);
-            setIndiceAtual(proximoIndice);
-          }
+          if (questoesRef.current.length > proximoIndice) { clearInterval(check); setAguardandoIA(false); setIndiceAtual(proximoIndice); }
         }, 500);
-      } else if (puladas.length > 0) {
-        setModoRevisaoPuladas(true);
-        setRevisandoPuladaIdx(0);
-      } else {
-        setSessaoFinalizada(true);
-      }
+      } else if (puladas.length > 0) { setModoRevisaoPuladas(true); setRevisandoPuladaIdx(0); }
+      else setSessaoFinalizada(true);
     }
   };
 
-  // ── Continuar estudando (após resultado) ─────────────────────────────────
-
   const handleContinuar = () => {
     if (!tipoEstudo || !assuntoAtual || !materialId) return;
-
-    // Reseta contadores mas mantém as questões existentes (adicionando mais)
-    setIndiceAtual(0);
-    setRespondida(false);
-    setAcertouAtual(null);
-    setQuestaoRevelada(false);
-    setAcertos(0);
-    setTotalRespondidas(0);
-    setTotalPuladas(0);
-    setPuladas([]);
-    setModoRevisaoPuladas(false);
-    setRevisandoPuladaIdx(0);
-    setSessaoFinalizada(false);
-    setReforcoGerado(false);
-    setAguardandoIA(false);
-    errosRef.current = [];
-    tempoInicio.current = Date.now();
-
-    // Gera novo lote de questões
+    setIndiceAtual(0); setRespondida(false); setAcertouAtual(null); setQuestaoRevelada(false);
+    setAcertos(0); setTotalRespondidas(0); setTotalPuladas(0);
+    setPuladas([]); setModoRevisaoPuladas(false); setRevisandoPuladaIdx(0);
+    setSessaoFinalizada(false); setReforcoGerado(false); setAguardandoIA(false);
+    errosRef.current = []; tempoInicio.current = Date.now();
     gerandoMaisRef.current = false;
-    setQuestoes([]);
-    questoesRef.current = [];
-
-    // Inicia nova geração
+    setQuestoes([]); questoesRef.current = [];
     setGerandoPrimeiras(true);
     (async () => {
       try {
         const resposta = await gerarConteudoParaAssunto(assuntoAtual, tipoEstudo, QUESTOES_LOTE);
-        const ids = await salvarQuestoes(
-          usuario!.uid, materialId!, assuntoAtual.id, assuntoAtual.titulo,
-          resposta.questoes
-        );
+        const ids = await salvarQuestoes(usuario!.uid, materialId!, assuntoAtual.id, assuntoAtual.titulo, resposta.questoes);
         const novas: Questao[] = resposta.questoes.map((q, i) => ({
-          id: ids[i],
-          userId: usuario!.uid,
-          materialId: materialId!,
-          assuntoId: assuntoAtual.id,
-          assuntoTitulo: assuntoAtual.titulo,
-          pergunta: q.pergunta,
-          alternativas: q.alternativas,
-          correta: q.correta,
-          explicacao: q.explicacao,
-          tipo: q.tipo || tipoEstudo,
-          criadoEm: {} as any,
+          id: ids[i], userId: usuario!.uid, materialId: materialId!,
+          assuntoId: assuntoAtual.id, assuntoTitulo: assuntoAtual.titulo,
+          pergunta: q.pergunta, alternativas: q.alternativas,
+          correta: q.correta, explicacao: q.explicacao,
+          tipo: q.tipo || tipoEstudo, criadoEm: {} as any,
         }));
-        setQuestoes(novas);
-        questoesRef.current = novas;
-        setGerandoPrimeiras(false);
-        // Gera mais em background
+        setQuestoes(novas); questoesRef.current = novas; setGerandoPrimeiras(false);
         gerarMaisQuestoes(assuntoAtual, tipoEstudo, materialId!, material?.titulo);
-      } catch {
-        setGerandoPrimeiras(false);
-      }
+      } catch { setGerandoPrimeiras(false); }
     })();
   };
 
-  // ── Pular questão ─────────────────────────────────────────────────────────
-
   const handlePular = () => {
     if (respondida || questaoRevelada || modoRevisaoPuladas) return;
-
-    setPuladas((prev) => {
-      if (!prev.includes(indiceAtual)) return [...prev, indiceAtual];
-      return prev;
-    });
+    setPuladas((prev) => prev.includes(indiceAtual) ? prev : [...prev, indiceAtual]);
     setTotalPuladas((p) => p + 1);
-
-    setRespondida(false);
-    setAcertouAtual(null);
-    setQuestaoRevelada(false);
-    setReforcoGerado(false);
+    setRespondida(false); setAcertouAtual(null); setQuestaoRevelada(false); setReforcoGerado(false);
     tempoInicio.current = Date.now();
-
     const proximoIndice = indiceAtual + 1;
-
     if (proximoIndice < questoesRef.current.length) {
       setIndiceAtual(proximoIndice);
-
-      if (
-        proximoIndice === THRESHOLD_ADAPTATIVO &&
-        !gerandoMaisRef.current &&
-        tipoEstudo &&
-        assuntoAtual &&
-        materialId
-      ) {
+      if (proximoIndice === THRESHOLD_ADAPTATIVO && !gerandoMaisRef.current && tipoEstudo && assuntoAtual && materialId) {
         gerarMaisQuestoes(assuntoAtual, tipoEstudo, materialId!, material?.titulo);
       }
     } else {
       if (gerandoMaisRef.current || carregandoMais) {
         setAguardandoIA(true);
         const check = setInterval(() => {
-          if (questoesRef.current.length > proximoIndice) {
-            clearInterval(check);
-            setAguardandoIA(false);
-            setIndiceAtual(proximoIndice);
-          }
+          if (questoesRef.current.length > proximoIndice) { clearInterval(check); setAguardandoIA(false); setIndiceAtual(proximoIndice); }
         }, 500);
-      } else if (puladas.length > 0) {
-        setModoRevisaoPuladas(true);
-        setRevisandoPuladaIdx(0);
-      } else {
-        setSessaoFinalizada(true);
-      }
+      } else if (puladas.length > 0) { setModoRevisaoPuladas(true); setRevisandoPuladaIdx(0); }
+      else setSessaoFinalizada(true);
     }
   };
 
-  // ── Mostrar resposta ──────────────────────────────────────────────────────
-
-  const handleMostrarResposta = () => {
-    setQuestaoRevelada(true);
-  };
-
-  // ── Responder ─────────────────────────────────────────────────────────────
+  const handleMostrarResposta = () => { setQuestaoRevelada(true); };
 
   const handleResponder = async (alternativa: string) => {
     const q = questaoCorrente();
     if (respondida || questaoRevelada || !usuario || !q) return;
-
     setRespondida(true);
     const tempoGasto = Math.round((Date.now() - tempoInicio.current) / 1000);
     const acertou = alternativa === q.correta;
     setAcertouAtual(acertou);
     if (acertou) setAcertos((p) => p + 1);
     setTotalRespondidas((p) => p + 1);
-
-    // Registra erro para geração adaptativa
+    if (!acertou) errosRef.current = [...errosRef.current, q.pergunta].slice(-5);
+    await registrarResposta(usuario.uid, "questao", q.id!, acertou, tempoGasto, { assuntoId: q.assuntoId, assuntoTitulo: q.assuntoTitulo, pergunta: q.pergunta });
     if (!acertou) {
-      errosRef.current = [...errosRef.current, q.pergunta].slice(-5);
-    }
-
-    await registrarResposta(usuario.uid, "questao", q.id!, acertou, tempoGasto, {
-      assuntoId: q.assuntoId,
-      assuntoTitulo: q.assuntoTitulo,
-      pergunta: q.pergunta,
-    });
-
-    if (!acertou) {
-      await salvarFlashcards(
-        usuario.uid, materialId!, q.assuntoId, q.assuntoTitulo,
-        [{ frente: q.pergunta, verso: `Correta: ${q.correta}\n${q.explicacao}` }],
-        "erro", material?.titulo
-      );
+      await salvarFlashcards(usuario.uid, materialId!, q.assuntoId, q.assuntoTitulo,
+        [{ frente: q.pergunta, verso: `Correta: ${q.correta}\n${q.explicacao}` }], "erro", material?.titulo);
     }
   };
-
-  // ── Gerar reforço ─────────────────────────────────────────────────────────
 
   const handleGerarReforco = useCallback(async () => {
     const q = questaoCorrente();
     if (!usuario || !assuntoAtual || !materialId || !q || gerandoReforco || reforcoGerado) return;
-    setGerandoReforco(true);
-    mostrarToast("🧠 Gerando flashcards de reforço...");
+    setGerandoReforco(true); mostrarToast("🧠 Gerando flashcards de reforço...");
     try {
       const reforco = await gerarReforcoParaQuestao(q.pergunta, q.assuntoTitulo);
       await salvarQuestoes(usuario.uid, materialId!, q.assuntoId, q.assuntoTitulo, reforco.questoes);
-      await salvarFlashcards(
-        usuario.uid, materialId!, q.assuntoId, q.assuntoTitulo,
-        reforco.flashcards, "gerado", material?.titulo
-      );
-      setReforcoGerado(true);
-      mostrarToast("✅ Flashcards de reforço criados!");
-    } catch {
-      mostrarToast("Erro ao gerar reforço. Tente novamente.");
-    } finally {
-      setGerandoReforco(false);
-    }
+      await salvarFlashcards(usuario.uid, materialId!, q.assuntoId, q.assuntoTitulo, reforco.flashcards, "gerado", material?.titulo);
+      setReforcoGerado(true); mostrarToast("✅ Flashcards de reforço criados!");
+    } catch { mostrarToast("Erro ao gerar reforço. Tente novamente."); }
+    finally { setGerandoReforco(false); }
   }, [usuario, assuntoAtual, materialId, gerandoReforco, reforcoGerado, material, mostrarToast, questoes, indiceAtual, modoRevisaoPuladas, revisandoPuladaIdx, puladas]);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -789,10 +529,7 @@ const Estudo = () => {
     );
   }
 
-  // Aguardando a IA gerar mais questões
-  if (aguardandoIA) {
-    return <AguardandoIA tipoEstudo={tipoEstudo} />;
-  }
+  if (aguardandoIA) return <AguardandoIA tipoEstudo={tipoEstudo} />;
 
   if (sessaoFinalizada) {
     return (
@@ -807,22 +544,12 @@ const Estudo = () => {
   const questaoAtual = questaoCorrente();
   if (!questaoAtual) return <LoadingQuestoes mensagem="Carregando questão..." />;
 
-  // Progresso
   const totalQuestoes = carregandoMais ? `${questoes.length}+` : `${questoes.length}`;
   const indiceExibido = modoRevisaoPuladas ? revisandoPuladaIdx + 1 : indiceAtual + 1;
   const totalExibido = modoRevisaoPuladas ? `${puladas.length} (revisão)` : totalQuestoes;
   const progPercent = questoes.length > 0
-    ? ((indiceAtual + (respondida ? 1 : 0)) / Math.max(questoes.length, QUESTOES_META)) * 100
-    : 0;
-
-  // Pode pular? Apenas no fluxo normal, e se houver mais questões à frente ou IA gerando
-  const podePular =
-    !modoRevisaoPuladas &&
-    !respondida &&
-    !questaoRevelada &&
-    (indiceAtual < questoes.length - 1 || carregandoMais);
-
-  // temProxima: true se há questão após esta ou se IA ainda está gerando mais
+    ? ((indiceAtual + (respondida ? 1 : 0)) / Math.max(questoes.length, QUESTOES_META)) * 100 : 0;
+  const podePular = !modoRevisaoPuladas && !respondida && !questaoRevelada && (indiceAtual < questoes.length - 1 || carregandoMais);
   const temProxima = modoRevisaoPuladas
     ? revisandoPuladaIdx < puladas.length - 1
     : indiceAtual < questoes.length - 1 || carregandoMais || puladas.length > 0;
@@ -832,26 +559,19 @@ const Estudo = () => {
       <div className="fixed inset-0 grid-pattern opacity-15 pointer-events-none" />
       <Navbar />
 
-      <ToastReforco
-        visivel={toastVisivel}
-        mensagem={toastMsg}
-        onClose={() => setToastVisivel(false)}
-      />
+      <ToastReforco visivel={toastVisivel} mensagem={toastMsg} onClose={() => setToastVisivel(false)} />
 
       <main className="relative mx-auto max-w-2xl px-4 pt-20 pb-16">
-        {/* ── Top bar ── */}
+        {/* Top bar */}
         <div className="mb-4 animate-fade-in-down">
           <div className="flex items-center justify-between mb-3">
-            <button
-              onClick={() => navigate(`/estudos/${materialId}`)}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors"
-            >
+            <button onClick={() => navigate(`/estudos/${materialId}`)}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
               {material.titulo}
             </button>
-
             <div className="flex items-center gap-2">
               {carregandoMais && (
                 <span className="flex items-center gap-1.5 text-[10px] text-violet-400">
@@ -859,48 +579,33 @@ const Estudo = () => {
                   IA gerando mais...
                 </span>
               )}
-
               {modoRevisaoPuladas && (
-                <span
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold"
-                  style={{ background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fbbf24" }}
-                >
+                <span className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold"
+                  style={{ background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: "#fbbf24" }}>
                   ⏭️ Revisando puladas
                 </span>
               )}
-
-              <span
-                className={`px-2 py-0.5 rounded-md text-[10px] border ${
-                  tipoEstudo === "simples"
-                    ? "bg-blue-500/10 border-blue-500/20 text-blue-400"
-                    : "bg-violet-500/10 border-violet-500/20 text-violet-400"
-                }`}
-              >
+              <span className={`px-2 py-0.5 rounded-md text-[10px] border ${tipoEstudo === "simples" ? "bg-blue-500/10 border-blue-500/20 text-blue-400" : "bg-violet-500/10 border-violet-500/20 text-violet-400"}`}>
                 {tipoEstudo === "simples" ? "⚡ Flash" : "🎯 Concurso"}
               </span>
             </div>
           </div>
 
-          {/* Switcher de assuntos */}
           {(material.assuntos?.length || 0) > 1 && (
             <div className="flex gap-1.5 flex-wrap mb-3">
               {material.assuntos?.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => handleTrocarAssunto(a.id)}
+                <button key={a.id} onClick={() => handleTrocarAssunto(a.id)}
                   className={`px-3 py-1 rounded-lg text-xs font-medium transition-all border ${
                     a.id === assuntoAtual.id
                       ? "bg-violet-500/20 border-violet-500/40 text-violet-300"
                       : "border-white/10 text-muted-foreground hover:border-violet-500/30 hover:text-white"
-                  }`}
-                >
+                  }`}>
                   {a.titulo}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Barra de progresso */}
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
             <div className="flex items-center gap-2">
               <span className="glass rounded-lg px-2.5 py-1 text-violet-400 font-mono font-bold text-[11px]">
@@ -909,35 +614,20 @@ const Estudo = () => {
               <span className="text-xs text-muted-foreground">{assuntoAtual.titulo}</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1">
-                <span className="text-success">✓</span>
-                <span className="text-success font-semibold">{acertos}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="text-destructive">✗</span>
-                <span className="text-destructive font-semibold">{totalRespondidas - acertos}</span>
-              </span>
+              <span className="flex items-center gap-1"><span className="text-success">✓</span><span className="text-success font-semibold">{acertos}</span></span>
+              <span className="flex items-center gap-1"><span className="text-destructive">✗</span><span className="text-destructive font-semibold">{totalRespondidas - acertos}</span></span>
               {totalPuladas > 0 && (
-                <span className="flex items-center gap-1">
-                  <span className="text-yellow-400">⏭</span>
-                  <span className="text-yellow-400 font-semibold">{totalPuladas}</span>
-                </span>
+                <span className="flex items-center gap-1"><span className="text-yellow-400">⏭</span><span className="text-yellow-400 font-semibold">{totalPuladas}</span></span>
               )}
             </div>
           </div>
           <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{
-                width: `${progPercent}%`,
-                background: "linear-gradient(90deg, #7c3aed, #6366f1, #60a5fa)",
-                boxShadow: "0 0 8px rgba(139,92,246,0.5)",
-              }}
-            />
+            <div className="h-full rounded-full transition-all duration-700"
+              style={{ width: `${progPercent}%`, background: "linear-gradient(90deg, #7c3aed, #6366f1, #60a5fa)", boxShadow: "0 0 8px rgba(139,92,246,0.5)" }} />
           </div>
         </div>
 
-        {/* ── Questão ── */}
+        {/* Questão */}
         <QuestaoCard
           key={`${assuntoAtual.id}-${indiceAtual}-${modoRevisaoPuladas ? `p${revisandoPuladaIdx}` : ""}`}
           pergunta={questaoAtual.pergunta}

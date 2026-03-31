@@ -1,3 +1,4 @@
+// src/pages/Dashboard.tsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -28,7 +29,7 @@ const useCounter = (target: number, duration = 1500) => {
   return count;
 };
 
-// Score Ring corrigido — sem fundo SVG ou classe que causa quadrado
+// ─── Score Ring — SVG puro sem classe que gera quadrado ──────────────────────
 const ScoreRing = ({ value, size = 80 }: { value: number; size?: number }) => {
   const radius = (size - 10) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -49,17 +50,31 @@ const ScoreRing = ({ value, size = 80 }: { value: number; size?: number }) => {
         height={size}
         style={{ transform: "rotate(-90deg)", display: "block" }}
       >
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
         <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke={color} strokeWidth="6" strokeLinecap="round"
-          strokeDasharray={circumference} strokeDashoffset={offset}
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="6"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
           style={{
             transition: "stroke-dashoffset 1.5s cubic-bezier(0.22,1,0.36,1)",
             filter: `drop-shadow(0 0 8px ${color})`,
           }}
         />
       </svg>
+      {/* Texto central absolutamente posicionado, sem herdar transform do SVG */}
     </div>
   );
 };
@@ -155,7 +170,13 @@ const Dashboard = () => {
           <div className="stat-card glass rounded-2xl p-5 card-hover opacity-0 animate-fade-in-up col-span-1"
             style={{ animationDelay: "200ms", animationFillMode: "forwards", borderColor: `${taxaColor}20` }}>
             <div className="flex items-start justify-between mb-2">
-              <ScoreRing value={taxaAcerto} />
+              {/* ScoreRing sem classe score-ring que causava transform herdado */}
+              <div className="relative inline-flex items-center justify-center" style={{ width: 80, height: 80 }}>
+                <svg width={80} height={80} style={{ transform: "rotate(-90deg)", display: "block" }}>
+                  <circle cx={40} cy={40} r={35} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
+                  <TaxaAcertoArc value={taxaAcerto} color={taxaColor} />
+                </svg>
+              </div>
               <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider text-right">Taxa de<br />Acerto</span>
             </div>
             <div className="flex items-baseline gap-1">
@@ -284,6 +305,38 @@ const Dashboard = () => {
         </div>
       </main>
     </div>
+  );
+};
+
+// Sub-componente para o arco animado do score ring no dashboard
+const TaxaAcertoArc = ({ value, color }: { value: number; color: string }) => {
+  const radius = 35;
+  const circumference = radius * 2 * Math.PI;
+  const [animated, setAnimated] = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(value), 400);
+    return () => clearTimeout(t);
+  }, [value]);
+
+  const offset = circumference - (animated / 100) * circumference;
+
+  return (
+    <circle
+      cx={40}
+      cy={40}
+      r={radius}
+      fill="none"
+      stroke={color}
+      strokeWidth="6"
+      strokeLinecap="round"
+      strokeDasharray={circumference}
+      strokeDashoffset={offset}
+      style={{
+        transition: "stroke-dashoffset 1.5s cubic-bezier(0.22,1,0.36,1)",
+        filter: `drop-shadow(0 0 8px ${color})`,
+      }}
+    />
   );
 };
 

@@ -1,3 +1,4 @@
+// src/pages/Flashcards.tsx
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -33,8 +34,38 @@ interface GrupoAssunto {
   cards: Flashcard[];
 }
 
-// ---- EmptyState ----
-const EmptyState = ({ navigate }: { navigate: (p: string) => void }) => (
+// ─── Limpar conteúdo de flashcard inválido ──────────────────────────────────
+function limparConteudoFlashcard(texto: string): string {
+  return texto
+    // Remove alternativas tipo A) B) C) D) E)
+    .replace(/^[A-E]\)\s+.+$/gm, "")
+    // Remove marcadores de gabarito
+    .replace(/^✅.*$/gm, "")
+    .replace(/^❌.*$/gm, "")
+    .replace(/^📌.*$/gm, "")
+    .replace(/^💡.*$/gm, "")
+    // Remove "CORRETA: X)" e variantes
+    .replace(/CORRETA?\s*[A-E]\)?\s*:?[^\n]*/gi, "")
+    // Remove "Alternativas:" e variantes
+    .replace(/Alternativas?:?[^\n]*/gi, "")
+    // Normaliza espaços/linhas
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+function flashcardEhValido(fc: Flashcard): boolean {
+  const frente = limparConteudoFlashcard(fc.frente);
+  const verso = limparConteudoFlashcard(fc.verso);
+  // Invalido se frente parece ser uma questão com alternativas
+  const temAlternativas = /[A-E]\)\s+\w/.test(fc.frente) || /[A-E]\)\s+\w/.test(fc.verso);
+  if (temAlternativas) return false;
+  // Invalido se muito curto após limpeza
+  if (frente.length < 5 || verso.length < 5) return false;
+  return true;
+}
+
+// ─── EmptyState ─────────────────────────────────────────────────────────────
+const EmptyState = ({ navigate, onCriar }: { navigate: (p: string) => void; onCriar: () => void }) => (
   <div className="min-h-screen bg-background">
     <div className="fixed inset-0 grid-pattern opacity-20 pointer-events-none" />
     <Navbar />
@@ -42,14 +73,24 @@ const EmptyState = ({ navigate }: { navigate: (p: string) => void }) => (
       <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-violet-600/20 to-indigo-600/20 border border-violet-500/20 flex items-center justify-center text-5xl animate-float">🃏</div>
       <div>
         <h2 className="text-2xl font-bold text-white" style={{ fontFamily: "Syne, sans-serif" }}>Nenhum flashcard ainda</h2>
-        <p className="mt-2 text-sm text-muted-foreground max-w-xs">Estude um material para gerar flashcards automaticamente.</p>
+        <p className="mt-2 text-sm text-muted-foreground max-w-xs">Estude um material para gerar flashcards automaticamente, ou crie o seu.</p>
       </div>
-      <button onClick={() => navigate("/estudos")} className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold text-white">📚 Ir para Estudos</button>
+      <div className="flex gap-3 flex-wrap justify-center">
+        <button onClick={() => navigate("/estudos")} className="btn-primary px-6 py-3 rounded-2xl text-sm font-bold text-white">📚 Ir para Estudos</button>
+        <button onClick={onCriar}
+          className="flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-bold transition-all"
+          style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+          </svg>
+          Criar Flashcard
+        </button>
+      </div>
     </div>
   </div>
 );
 
-// ---- CompleteState ----
+// ─── CompleteState ───────────────────────────────────────────────────────────
 const CompleteState = ({ revisados, navigate }: { revisados: number; navigate: (p: string) => void }) => (
   <div className="min-h-screen bg-background">
     <div className="fixed inset-0 grid-pattern opacity-20 pointer-events-none" />
@@ -69,7 +110,7 @@ const CompleteState = ({ revisados, navigate }: { revisados: number; navigate: (
   </div>
 );
 
-// ---- Modal Criar Flashcard Manual ----
+// ─── Modal Criar Flashcard Manual ────────────────────────────────────────────
 const ModalCriarFlashcard = ({
   onFechar,
   onSalvar,
@@ -92,48 +133,30 @@ const ModalCriarFlashcard = ({
   const assuntoObj = materialObj?.assuntos?.find((a) => a.id === assuntoSelecionado);
 
   const handleSalvar = async () => {
-    if (!frente.trim() || !verso.trim()) {
-      setErro("Preencha a pergunta e a resposta.");
-      return;
-    }
-
-    setSalvando(true);
-    setErro("");
+    if (!frente.trim() || !verso.trim()) { setErro("Preencha a frente e o verso."); return; }
+    setSalvando(true); setErro("");
     try {
       let opcoes: { materialId?: string; materialTitulo?: string; assuntoId?: string; assuntoTitulo?: string } = {};
-
       if (vincular === "material" && materialSelecionado && assuntoSelecionado) {
-        opcoes = {
-          materialId: materialSelecionado,
-          materialTitulo: materialObj?.titulo,
-          assuntoId: assuntoSelecionado,
-          assuntoTitulo: assuntoObj?.titulo,
-        };
+        opcoes = { materialId: materialSelecionado, materialTitulo: materialObj?.titulo, assuntoId: assuntoSelecionado, assuntoTitulo: assuntoObj?.titulo };
       } else if (vincular === "nao" && tituloManual.trim()) {
-        opcoes = {
-          assuntoTitulo: tituloManual.trim(),
-        };
+        opcoes = { assuntoTitulo: tituloManual.trim() };
       }
-
       await onSalvar(frente.trim(), verso.trim(), opcoes);
-    } catch {
-      setErro("Erro ao salvar. Tente novamente.");
-    } finally {
-      setSalvando(false);
-    }
+    } catch { setErro("Erro ao salvar. Tente novamente."); }
+    finally { setSalvando(false); }
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(16px)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onFechar(); }}
-    >
+      onClick={(e) => { if (e.target === e.currentTarget) onFechar(); }}>
       <div className="w-full sm:max-w-lg animate-scale-in rounded-t-3xl sm:rounded-3xl overflow-hidden"
         style={{ border: "1px solid rgba(139,92,246,0.3)", background: "rgba(16,14,30,0.98)", maxHeight: "92vh", overflowY: "auto" }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/8 sticky top-0 z-10" style={{ background: "rgba(16,14,30,0.98)" }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/8 sticky top-0 z-10"
+          style={{ background: "rgba(16,14,30,0.98)" }}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-violet-500/20 flex items-center justify-center text-sm">✏️</div>
             <span className="text-sm font-bold text-white" style={{ fontFamily: "Syne, sans-serif" }}>Criar Flashcard</span>
@@ -146,50 +169,41 @@ const ModalCriarFlashcard = ({
         </div>
 
         <div className="p-5 space-y-5">
+          {/* Dica de formato */}
+          <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
+            style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)" }}>
+            <span className="text-violet-400 text-sm shrink-0">💡</span>
+            <p className="text-xs text-violet-300/80 leading-relaxed">
+              <strong className="text-violet-300">Padrão recomendado:</strong> Frente = conceito ou pergunta direta. Verso = definição objetiva em 1-2 frases.
+            </p>
+          </div>
+
           {/* Frente */}
           <div>
-            <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">
-              Pergunta / Conceito (Frente)
-            </label>
-            <textarea
-              value={frente}
-              onChange={(e) => setFrente(e.target.value)}
-              rows={3}
+            <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">Frente — Pergunta / Conceito</label>
+            <textarea value={frente} onChange={(e) => setFrente(e.target.value)} rows={3}
               placeholder="Ex: O que é habeas corpus?"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30 resize-none transition-all"
-            />
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30 resize-none transition-all text-center" />
           </div>
 
           {/* Verso */}
           <div>
-            <label className="block text-xs font-semibold text-success uppercase tracking-wider mb-2">
-              Resposta / Definição (Verso)
-            </label>
-            <textarea
-              value={verso}
-              onChange={(e) => setVerso(e.target.value)}
-              rows={3}
+            <label className="block text-xs font-semibold text-success uppercase tracking-wider mb-2">Verso — Resposta / Definição</label>
+            <textarea value={verso} onChange={(e) => setVerso(e.target.value)} rows={3}
               placeholder="Ex: Remédio constitucional que protege a liberdade de locomoção contra ilegalidade ou abuso de poder."
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-success/60 focus:ring-1 focus:ring-success/30 resize-none transition-all"
-            />
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-success/60 focus:ring-1 focus:ring-success/30 resize-none transition-all text-center" />
           </div>
 
-          {/* Vincular */}
+          {/* Organização */}
           <div>
-            <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Organização
-            </label>
+            <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Organização</label>
             <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setVincular("nao")}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium transition-all border ${vincular === "nao" ? "bg-violet-500/20 border-violet-500/40 text-violet-300" : "border-white/10 text-muted-foreground hover:text-white"}`}
-              >
+              <button onClick={() => setVincular("nao")}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium transition-all border ${vincular === "nao" ? "bg-violet-500/20 border-violet-500/40 text-violet-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
                 📝 Título personalizado
               </button>
-              <button
-                onClick={() => setVincular("material")}
-                className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium transition-all border ${vincular === "material" ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300" : "border-white/10 text-muted-foreground hover:text-white"}`}
-              >
+              <button onClick={() => setVincular("material")}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-medium transition-all border ${vincular === "material" ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
                 📚 Vincular a material
               </button>
             </div>
@@ -197,13 +211,9 @@ const ModalCriarFlashcard = ({
             {vincular === "nao" && (
               <div>
                 <label className="block text-xs text-muted-foreground mb-1.5">Nome do grupo (opcional)</label>
-                <input
-                  type="text"
-                  value={tituloManual}
-                  onChange={(e) => setTituloManual(e.target.value)}
+                <input type="text" value={tituloManual} onChange={(e) => setTituloManual(e.target.value)}
                   placeholder="Ex: Direito Constitucional, Português..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-violet-500/60 transition-all"
-                />
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-violet-500/60 transition-all" />
                 <p className="text-[10px] text-muted-foreground mt-1.5">Se vazio, será salvo em "Criados manualmente"</p>
               </div>
             )}
@@ -212,28 +222,21 @@ const ModalCriarFlashcard = ({
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1.5">Material</label>
-                  <select
-                    value={materialSelecionado}
-                    onChange={(e) => { setMaterialSelecionado(e.target.value); setAssuntoSelecionado(""); }}
+                  <select value={materialSelecionado} onChange={(e) => { setMaterialSelecionado(e.target.value); setAssuntoSelecionado(""); }}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-violet-500/60 transition-all"
-                    style={{ background: "rgba(255,255,255,0.05)" }}
-                  >
+                    style={{ background: "rgba(255,255,255,0.05)" }}>
                     <option value="">Selecione um material...</option>
                     {materiais.map((m) => (
                       <option key={m.id} value={m.id} style={{ background: "#0d0e16" }}>{m.titulo}</option>
                     ))}
                   </select>
                 </div>
-
                 {materialSelecionado && materialObj?.assuntos && materialObj.assuntos.length > 0 && (
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1.5">Assunto</label>
-                    <select
-                      value={assuntoSelecionado}
-                      onChange={(e) => setAssuntoSelecionado(e.target.value)}
+                    <select value={assuntoSelecionado} onChange={(e) => setAssuntoSelecionado(e.target.value)}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-violet-500/60 transition-all"
-                      style={{ background: "rgba(255,255,255,0.05)" }}
-                    >
+                      style={{ background: "rgba(255,255,255,0.05)" }}>
                       <option value="">Selecione um assunto...</option>
                       {materialObj.assuntos.map((a) => (
                         <option key={a.id} value={a.id} style={{ background: "#0d0e16" }}>{a.titulo}</option>
@@ -251,23 +254,13 @@ const ModalCriarFlashcard = ({
             </div>
           )}
 
-          {/* Botões */}
           <div className="flex gap-2">
-            <button
-              onClick={onFechar}
-              className="flex-1 glass rounded-xl py-3 text-sm font-semibold text-white border border-white/10 hover:bg-white/5 transition-all"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSalvar}
-              disabled={salvando || !frente.trim() || !verso.trim()}
-              className="flex-1 btn-primary rounded-xl py-3 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed"
-            >
+            <button onClick={onFechar} className="flex-1 glass rounded-xl py-3 text-sm font-semibold text-white border border-white/10 hover:bg-white/5 transition-all">Cancelar</button>
+            <button onClick={handleSalvar} disabled={salvando || !frente.trim() || !verso.trim()}
+              className="flex-1 btn-primary rounded-xl py-3 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed">
               {salvando ? (
                 <span className="flex items-center justify-center gap-2">
-                  <div className="w-3 h-3 rounded-full border border-white/30 border-t-white animate-spin" />
-                  Salvando...
+                  <div className="w-3 h-3 rounded-full border border-white/30 border-t-white animate-spin" />Salvando...
                 </span>
               ) : "✓ Criar Flashcard"}
             </button>
@@ -278,77 +271,84 @@ const ModalCriarFlashcard = ({
   );
 };
 
-// ---- Rating Buttons redesenhados ----
-interface RatingConfig {
-  label: string;
-  sublabel: string;
-  color: string;
-  bg: string;
-  border: string;
-  icon: React.ReactNode;
-  qualidade: number;
-}
-
+// ─── Novos botões de avaliação ───────────────────────────────────────────────
 const RatingButtons = ({ onRating, disabled }: { onRating: (q: number) => void; disabled?: boolean }) => {
-  const ratings: RatingConfig[] = [
+  const ratings = [
     {
-      label: "Não lembrei",
-      sublabel: "Rever em breve",
-      color: "#f87171",
-      bg: "rgba(248,113,113,0.08)",
-      border: "rgba(248,113,113,0.25)",
       qualidade: 0,
+      label: "Não lembrei",
+      sublabel: "Revisar em breve",
+      colorFrom: "#f87171",
+      colorTo: "#ef4444",
+      borderColor: "rgba(248,113,113,0.35)",
+      bg: "rgba(248,113,113,0.07)",
       icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="15" y1="9" x2="9" y2="15" />
+          <line x1="9" y1="9" x2="15" y2="15" />
         </svg>
       ),
     },
     {
+      qualidade: 1,
       label: "Com esforço",
       sublabel: "Preciso praticar",
-      color: "#fbbf24",
-      bg: "rgba(251,191,36,0.08)",
-      border: "rgba(251,191,36,0.25)",
-      qualidade: 1,
+      colorFrom: "#fbbf24",
+      colorTo: "#f59e0b",
+      borderColor: "rgba(251,191,36,0.35)",
+      bg: "rgba(251,191,36,0.07)",
       icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
         </svg>
       ),
     },
     {
+      qualidade: 2,
       label: "Lembrei bem",
       sublabel: "Próximo intervalo",
-      color: "#34d399",
-      bg: "rgba(52,211,153,0.08)",
-      border: "rgba(52,211,153,0.25)",
-      qualidade: 2,
+      colorFrom: "#34d399",
+      colorTo: "#10b981",
+      borderColor: "rgba(52,211,153,0.35)",
+      bg: "rgba(52,211,153,0.07)",
       icon: (
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+          <polyline points="22 4 12 14.01 9 11.01" />
         </svg>
       ),
     },
   ];
 
   return (
-    <div className="space-y-2">
-      <p className="text-center text-xs text-muted-foreground font-medium uppercase tracking-wider mb-3">Como foi a lembrança?</p>
+    <div className="space-y-3">
+      <p className="text-center text-[11px] text-muted-foreground font-medium uppercase tracking-widest">Como foi sua lembrança?</p>
       <div className="flex gap-2">
         {ratings.map((r) => (
           <button
             key={r.qualidade}
             onClick={() => !disabled && onRating(r.qualidade)}
             disabled={disabled}
-            className="flex-1 flex flex-col items-center gap-2 py-3.5 px-2 rounded-2xl border-2 transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: r.bg, borderColor: r.border }}
-            onMouseEnter={(e) => !disabled && (e.currentTarget.style.boxShadow = `0 0 20px ${r.color}40`)}
-            onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "")}
+            className="flex-1 flex flex-col items-center gap-2 py-3.5 px-2 rounded-2xl border-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              background: r.bg,
+              borderColor: r.borderColor,
+            }}
+            onMouseEnter={(e) => {
+              if (!disabled) {
+                e.currentTarget.style.transform = "scale(1.04)";
+                e.currentTarget.style.boxShadow = `0 8px 24px ${r.colorFrom}30`;
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "";
+              e.currentTarget.style.boxShadow = "";
+            }}
           >
-            <span style={{ color: r.color }}>{r.icon}</span>
+            <span style={{ color: r.colorFrom }}>{r.icon}</span>
             <div className="text-center">
-              <p className="text-xs font-bold leading-tight" style={{ color: r.color }}>{r.label}</p>
+              <p className="text-xs font-bold leading-tight" style={{ color: r.colorFrom }}>{r.label}</p>
               <p className="text-[9px] text-muted-foreground mt-0.5 leading-tight">{r.sublabel}</p>
             </div>
           </button>
@@ -358,7 +358,35 @@ const RatingButtons = ({ onRating, disabled }: { onRating: (q: number) => void; 
   );
 };
 
-// ---- FlashcardSession ----
+// ─── Score Ring — sem SVG background, sem classe que gera quadrado ───────────
+const ScoreRingFlash = ({ value, size = 100 }: { value: number; size?: number }) => {
+  const radius = (size - 10) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const color = value >= 70 ? "#34d399" : value >= 40 ? "#fbbf24" : "#f87171";
+  const offset = circumference - (value / 100) * circumference;
+  return (
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg
+        width={size}
+        height={size}
+        style={{ transform: "rotate(-90deg)", display: "block" }}
+      >
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius}
+          fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
+          strokeDasharray={circumference} strokeDashoffset={offset}
+          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.22,1,0.36,1)", filter: `drop-shadow(0 0 6px ${color})` }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span className="text-sm font-bold" style={{ color, fontFamily: "Syne, sans-serif" }}>{value}%</span>
+      </div>
+    </div>
+  );
+};
+
+// ─── FlashcardSession ────────────────────────────────────────────────────────
 const FlashcardSession = ({
   cards, grupo, onVoltar, modoRevisao, userId,
 }: {
@@ -381,7 +409,7 @@ const FlashcardSession = ({
   const [salvando, setSalvando] = useState(false);
   const [cardsLocais, setCardsLocais] = useState<Flashcard[]>(cards);
   const [gerandoReforco, setGerandoReforco] = useState(false);
-  const [reforcoGerado, setReforcoGerado] = useState(false);
+  const [toastReforco, setToastReforco] = useState("");
 
   const flashcardAtual = cardsLocais[indiceAtual];
 
@@ -397,10 +425,6 @@ const FlashcardSession = ({
     return () => window.removeEventListener("keydown", handler);
   }, [handleFlip]);
 
-  useEffect(() => {
-    setReforcoGerado(false);
-  }, [indiceAtual]);
-
   const handleAvaliacao = async (qualidade: number) => {
     if (!flashcardAtual?.id || processando) return;
     setProcessando(true);
@@ -410,9 +434,14 @@ const FlashcardSession = ({
       await registrarResposta(userId, "flashcard", flashcardAtual.id, qualidade > 0, 0);
 
       // Se errou ou achou difícil: gera reforço em background
-      if (qualidade <= 1 && !reforcoGerado) {
+      if (qualidade <= 1) {
         setGerandoReforco(true);
-        gerarReforcoParaFlashcard(flashcardAtual.frente, flashcardAtual.verso, grupo.assuntoTitulo)
+        setToastReforco("Gerando flashcards de reforço...");
+        gerarReforcoParaFlashcard(
+          flashcardAtual.frente,
+          flashcardAtual.verso,
+          grupo.assuntoTitulo
+        )
           .then(async (novosCards) => {
             if (novosCards.length > 0) {
               await salvarFlashcards(
@@ -424,9 +453,11 @@ const FlashcardSession = ({
                 "gerado",
                 grupo.materialTitulo
               );
+              setToastReforco(`✓ ${novosCards.length} flashcard${novosCards.length > 1 ? "s" : ""} de reforço criado${novosCards.length > 1 ? "s" : ""}!`);
+              setTimeout(() => setToastReforco(""), 3000);
             }
           })
-          .catch(() => { /* silent */ })
+          .catch(() => setToastReforco(""))
           .finally(() => setGerandoReforco(false));
       }
     } catch { /* silent */ }
@@ -475,6 +506,20 @@ const FlashcardSession = ({
     <div className="min-h-screen bg-background">
       <div className="fixed inset-0 grid-pattern opacity-15 pointer-events-none" />
       <Navbar />
+
+      {/* Toast reforço */}
+      {toastReforco && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-fade-in-down pointer-events-none">
+          <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl glass-strong"
+            style={{ border: "1px solid rgba(139,92,246,0.4)", boxShadow: "0 0 30px rgba(139,92,246,0.2)" }}>
+            {gerandoReforco && (
+              <div className="w-3 h-3 rounded-full border border-violet-400/40 border-t-violet-400 animate-spin shrink-0" />
+            )}
+            <p className="text-sm font-medium text-white">{toastReforco}</p>
+          </div>
+        </div>
+      )}
+
       <main className="relative mx-auto max-w-xl px-4 pt-20 sm:pt-24 pb-16">
         {/* Header */}
         <div className="mb-5 animate-fade-in-down">
@@ -502,14 +547,17 @@ const FlashcardSession = ({
           </div>
         </div>
 
+        {/* Badge de origem */}
         {flashcardAtual?.origem === "erro" && (
-          <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
-            ⚠️ Gerado de questão errada
+          <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3C6.477 3 2 7.477 2 13s4.477 10 10 10 10-4.477 10-10S17.523 3 12 3z" /></svg>
+            Reforço gerado
           </div>
         )}
         {flashcardAtual?.origem === "manual" && (
           <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs">
-            ✏️ Criado manualmente
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            Criado manualmente
           </div>
         )}
 
@@ -518,18 +566,17 @@ const FlashcardSession = ({
           <div className="glass-strong rounded-3xl p-5 mb-4 space-y-4 animate-scale-in" style={{ border: "1px solid rgba(139,92,246,0.2)" }}>
             <h3 className="text-sm font-bold text-white">Editar Flashcard</h3>
             <div>
-              <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">Pergunta / Conceito</label>
+              <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">Frente</label>
               <textarea value={draftFrente} onChange={(e) => setDraftFrente(e.target.value)} rows={3}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-violet-500/60 resize-none" />
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-violet-500/60 resize-none text-center" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-success uppercase tracking-wider mb-2">Resposta / Definição</label>
+              <label className="block text-xs font-semibold text-success uppercase tracking-wider mb-2">Verso</label>
               <textarea value={draftVerso} onChange={(e) => setDraftVerso(e.target.value)} rows={3}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-success/60 resize-none" />
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-success/60 resize-none text-center" />
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setEditando(false)}
-                className="flex-1 glass rounded-xl py-2.5 text-sm text-muted-foreground border border-white/10 hover:bg-white/5">Cancelar</button>
+              <button onClick={() => setEditando(false)} className="flex-1 glass rounded-xl py-2.5 text-sm text-muted-foreground border border-white/10 hover:bg-white/5">Cancelar</button>
               <button onClick={handleSalvarEdicao} disabled={salvando}
                 className="flex-1 btn-primary rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50">
                 {salvando ? "Salvando…" : "✓ Salvar"}
@@ -539,7 +586,7 @@ const FlashcardSession = ({
         ) : (
           <>
             {/* Card com flip */}
-            <div className="relative cursor-pointer" style={{ height: "260px", perspective: "1400px" }} onClick={handleFlip}>
+            <div className="relative cursor-pointer" style={{ height: "280px", perspective: "1400px" }} onClick={handleFlip}>
               <div style={{
                 position: "absolute", inset: 0,
                 transformStyle: "preserve-3d",
@@ -560,8 +607,8 @@ const FlashcardSession = ({
                   padding: "1.5rem",
                   overflowY: "auto",
                 }}>
-                  <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-medium">
+                  <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-500/25 text-violet-400 text-xs font-medium">
                       <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
                       {flashcardAtual?.assuntoTitulo}
                     </span>
@@ -572,8 +619,11 @@ const FlashcardSession = ({
                       </svg>
                     </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto flex items-center">
-                    <p className="text-base sm:text-lg text-white font-medium leading-relaxed w-full">{flashcardAtual?.frente}</p>
+                  {/* Texto centralizado */}
+                  <div className="flex-1 overflow-y-auto flex items-center justify-center">
+                    <p className="text-base sm:text-lg text-white font-medium leading-relaxed text-center w-full">
+                      {limparConteudoFlashcard(flashcardAtual?.frente || "")}
+                    </p>
                   </div>
                   {!flipped && (
                     <div className="flex justify-center mt-3 flex-shrink-0">
@@ -581,7 +631,7 @@ const FlashcardSession = ({
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                         </svg>
-                        Toque para revelar a resposta
+                        Toque para revelar
                       </span>
                     </div>
                   )}
@@ -601,8 +651,8 @@ const FlashcardSession = ({
                   padding: "1.5rem",
                   overflowY: "auto",
                 }}>
-                  <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success/15 border border-success/25 text-success text-xs font-medium">
+                  <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-success/15 border border-success/25 text-success text-xs font-medium">
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                       </svg>
@@ -615,8 +665,11 @@ const FlashcardSession = ({
                       </svg>
                     </button>
                   </div>
-                  <div className="flex-1 overflow-y-auto flex items-center">
-                    <p className="text-base text-white font-medium leading-relaxed w-full">{flashcardAtual?.verso}</p>
+                  {/* Texto centralizado */}
+                  <div className="flex-1 overflow-y-auto flex items-center justify-center">
+                    <p className="text-base text-white font-medium leading-relaxed text-center w-full">
+                      {limparConteudoFlashcard(flashcardAtual?.verso || "")}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -633,14 +686,10 @@ const FlashcardSession = ({
             {/* Rating buttons */}
             <div className={`transition-all duration-400 ${flipped ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
               <RatingButtons onRating={handleAvaliacao} disabled={processando} />
-              {gerandoReforco && (
-                <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-violet-400/70">
-                  <div className="w-2 h-2 rounded-full border border-violet-400/40 border-t-violet-400 animate-spin" />
-                  Gerando flashcards de reforço...
-                </div>
-              )}
             </div>
-            {!flipped && <p className="text-center text-xs text-muted-foreground mt-4">Pense na resposta antes de virar o card</p>}
+            {!flipped && (
+              <p className="text-center text-xs text-muted-foreground mt-4">Pense na resposta antes de virar o card</p>
+            )}
           </>
         )}
       </main>
@@ -648,35 +697,7 @@ const FlashcardSession = ({
   );
 };
 
-// ---- Score Ring sem SVG background quadrado ----
-const ScoreRingFlash = ({ value, size = 100 }: { value: number; size?: number }) => {
-  const radius = (size - 10) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const color = value >= 70 ? "#34d399" : value >= 40 ? "#fbbf24" : "#f87171";
-  const offset = circumference - (value / 100) * circumference;
-  return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg
-        width={size}
-        height={size}
-        style={{ transform: "rotate(-90deg)", display: "block" }}
-      >
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
-          strokeDasharray={circumference} strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.22,1,0.36,1)", filter: `drop-shadow(0 0 6px ${color})` }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-sm font-bold" style={{ color, fontFamily: "Syne, sans-serif" }}>{value}%</span>
-      </div>
-    </div>
-  );
-};
-
-// ---- Main Page ----
+// ─── Main Page ───────────────────────────────────────────────────────────────
 const Flashcards = () => {
   const { usuario } = useAuth();
   const navigate = useNavigate();
@@ -699,45 +720,44 @@ const Flashcards = () => {
     setTimeout(() => setToastVisible(false), 3000);
   };
 
-  useEffect(() => {
+  const carregarDados = useCallback(async () => {
     if (!usuario) return;
-    const carregar = async () => {
-      try {
-        const [todos, pendentes, perfil, mats] = await Promise.all([
-          buscarTodosFlashcardsDoUsuario(usuario.uid),
-          buscarFlashcardsPendentes(usuario.uid),
-          buscarPerfilUsuario(usuario.uid),
-          buscarMateriaisDoUsuario(usuario.uid),
-        ]);
+    try {
+      const [todos, pendentes, perfil, mats] = await Promise.all([
+        buscarTodosFlashcardsDoUsuario(usuario.uid),
+        buscarFlashcardsPendentes(usuario.uid),
+        buscarPerfilUsuario(usuario.uid),
+        buscarMateriaisDoUsuario(usuario.uid),
+      ]);
 
-        if (perfil?.modoRevisao) setModoRevisao(perfil.modoRevisao);
-        setMateriais(mats);
-        const pendentesIds = new Set(pendentes.map((p) => p.id));
+      if (perfil?.modoRevisao) setModoRevisao(perfil.modoRevisao);
+      setMateriais(mats);
+      const pendentesIds = new Set(pendentes.map((p) => p.id));
 
-        const mapa = new Map<string, GrupoAssunto>();
-        for (const fc of todos) {
-          const chave = `${fc.materialId || "sem"}__${fc.assuntoId || "sem"}`;
-          if (!mapa.has(chave)) {
-            mapa.set(chave, {
-              chave,
-              materialId: fc.materialId || "",
-              materialTitulo: fc.materialTitulo || "Sem material",
-              assuntoId: fc.assuntoId || "",
-              assuntoTitulo: fc.assuntoTitulo || "Geral",
-              pendentes: 0, total: 0, cards: [],
-            });
-          }
-          const g = mapa.get(chave)!;
-          g.total++;
-          g.cards.push(fc);
-          if (pendentesIds.has(fc.id)) g.pendentes++;
+      const mapa = new Map<string, GrupoAssunto>();
+      for (const fc of todos) {
+        const chave = `${fc.materialId || "sem"}__${fc.assuntoId || "sem"}`;
+        if (!mapa.has(chave)) {
+          mapa.set(chave, {
+            chave,
+            materialId: fc.materialId || "",
+            materialTitulo: fc.materialTitulo || "Sem material",
+            assuntoId: fc.assuntoId || "",
+            assuntoTitulo: fc.assuntoTitulo || "Geral",
+            pendentes: 0, total: 0, cards: [],
+          });
         }
-        setGrupos(Array.from(mapa.values()));
-      } catch { /* silent */ }
-      finally { setCarregando(false); setTimeout(() => setVisible(true), 100); }
-    };
-    carregar();
+        const g = mapa.get(chave)!;
+        g.total++;
+        g.cards.push(fc);
+        if (pendentesIds.has(fc.id)) g.pendentes++;
+      }
+      setGrupos(Array.from(mapa.values()));
+    } catch { /* silent */ }
+    finally { setCarregando(false); setTimeout(() => setVisible(true), 100); }
   }, [usuario]);
+
+  useEffect(() => { carregarDados(); }, [carregarDados]);
 
   const handleModoRevisao = async (modo: ModoRevisao) => {
     setModoRevisao(modo);
@@ -757,30 +777,7 @@ const Flashcards = () => {
     await criarFlashcardManual(usuario.uid, frente, verso, opcoes);
     setModalCriar(false);
     mostrarToast("✅ Flashcard criado com sucesso!");
-
-    // Atualiza a lista sem recarregar a página
-    const todos = await buscarTodosFlashcardsDoUsuario(usuario.uid);
-    const pendentes = await buscarFlashcardsPendentes(usuario.uid);
-    const pendentesIds = new Set(pendentes.map((p) => p.id));
-    const mapa = new Map<string, GrupoAssunto>();
-    for (const fc of todos) {
-      const chave = `${fc.materialId || "sem"}__${fc.assuntoId || "sem"}`;
-      if (!mapa.has(chave)) {
-        mapa.set(chave, {
-          chave,
-          materialId: fc.materialId || "",
-          materialTitulo: fc.materialTitulo || "Sem material",
-          assuntoId: fc.assuntoId || "",
-          assuntoTitulo: fc.assuntoTitulo || "Geral",
-          pendentes: 0, total: 0, cards: [],
-        });
-      }
-      const g = mapa.get(chave)!;
-      g.total++;
-      g.cards.push(fc);
-      if (pendentesIds.has(fc.id)) g.pendentes++;
-    }
-    setGrupos(Array.from(mapa.values()));
+    await carregarDados();
   };
 
   if (carregando) {
@@ -827,23 +824,10 @@ const Flashcards = () => {
     );
   }
 
-  const totalPendentes = grupos.reduce((acc, g) => acc + g.pendentes, 0);
-
   if (grupos.length === 0) {
     return (
       <>
-        <EmptyState navigate={navigate} />
-        {/* Botão criar mesmo sem flashcards */}
-        <button
-          onClick={() => setModalCriar(true)}
-          className="fixed bottom-6 right-6 z-40 btn-primary w-14 h-14 rounded-full flex items-center justify-center shadow-2xl"
-          style={{ boxShadow: "0 0 30px rgba(139,92,246,0.5)" }}
-          title="Criar flashcard"
-        >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
+        <EmptyState navigate={navigate} onCriar={() => setModalCriar(true)} />
         {modalCriar && (
           <ModalCriarFlashcard
             onFechar={() => setModalCriar(false)}
@@ -855,14 +839,12 @@ const Flashcards = () => {
     );
   }
 
+  const totalPendentes = grupos.reduce((acc, g) => acc + g.pendentes, 0);
   const materiaisUnicos = Array.from(new Map(grupos.map((g) => [g.materialId, g.materialTitulo])).entries());
-
   const ordenarGrupos = (gs: GrupoAssunto[]) => {
     if (ordemGrupo === "pendentes") return [...gs].sort((a, b) => b.pendentes - a.pendentes);
     return [...gs].sort((a, b) => a.assuntoTitulo.localeCompare(b.assuntoTitulo));
   };
-
-  // Estatísticas rápidas
   const totalCards = grupos.reduce((a, g) => a + g.total, 0);
   const taxaGeral = totalCards > 0 ? Math.round(((totalCards - totalPendentes) / totalCards) * 100) : 0;
 
@@ -881,8 +863,8 @@ const Flashcards = () => {
         </div>
       )}
 
-      <main className="relative mx-auto max-w-4xl px-4 pt-20 sm:pt-24 pb-20">
-        {/* Header */}
+      <main className="relative mx-auto max-w-4xl px-4 pt-20 sm:pt-24 pb-24">
+        {/* Header + Botão criar */}
         <div className={`mb-6 transition-all duration-700 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
           <span className="text-xs font-medium text-violet-400 uppercase tracking-widest">Repetição Espaçada</span>
           <div className="flex items-start justify-between mt-2 gap-4">
@@ -894,10 +876,21 @@ const Flashcards = () => {
                   : "Todos em dia! 🎉"}
               </p>
             </div>
-            {/* Score mini */}
-            <div className="shrink-0 flex flex-col items-center gap-1">
+            <div className="flex items-center gap-3 shrink-0">
+              {/* Score ring sem quadrado */}
               <ScoreRingFlash value={taxaGeral} size={64} />
-              <p className="text-[9px] text-muted-foreground">revisados</p>
+              {/* Botão criar — bem visível */}
+              <button
+                onClick={() => setModalCriar(true)}
+                className="btn-primary flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+                style={{ boxShadow: "0 0 20px rgba(139,92,246,0.35)" }}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden sm:inline">Criar Flashcard</span>
+                <span className="sm:hidden">Criar</span>
+              </button>
             </div>
           </div>
         </div>
@@ -926,7 +919,7 @@ const Flashcards = () => {
           </div>
         </div>
 
-        {/* Filtro + Ordem */}
+        {/* Filtros */}
         <div className={`flex flex-wrap gap-2 mb-6 transition-all duration-700 delay-150 ${visible ? "opacity-100" : "opacity-0"}`}>
           <button onClick={() => setFiltroPendentes(false)}
             className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${!filtroPendentes ? "bg-violet-500/20 border-violet-500/40 text-violet-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
@@ -1041,19 +1034,6 @@ const Flashcards = () => {
           })}
         </div>
       </main>
-
-      {/* FAB - Criar flashcard */}
-      <button
-        onClick={() => setModalCriar(true)}
-        className="fixed bottom-6 right-6 z-40 btn-primary flex items-center gap-2 px-5 py-3 rounded-2xl shadow-2xl text-sm font-bold text-white"
-        style={{ boxShadow: "0 0 30px rgba(139,92,246,0.4)" }}
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-        </svg>
-        <span className="hidden sm:inline">Criar Flashcard</span>
-        <span className="sm:hidden">Criar</span>
-      </button>
 
       {/* Modal criar */}
       {modalCriar && (

@@ -58,6 +58,25 @@ export function detectarTipoQuestao(alternativas: string[], pergunta?: string): 
   return "multipla";
 }
 
+// ─── Ícone de Tesoura ────────────────────────────────────────────────────────
+const IconeTesoura = ({ className = "" }: { className?: string }) => (
+  <svg
+    className={className}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="6" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <line x1="20" y1="4" x2="8.12" y2="15.88" />
+    <line x1="14.47" y1="14.48" x2="20" y2="20" />
+    <line x1="8.12" y1="8.12" x2="12" y2="12" />
+  </svg>
+);
+
 // ─── Formatar enunciado com itens I, II, III, IV ────────────────────────────
 
 function PerguntaFormatada({ texto }: { texto: string }) {
@@ -196,21 +215,49 @@ function OpcaoMultipla({ alternativa, index, respondida, selecionada, correta, r
   // Se ocultada (cortada), mostra diferente
   if (ocultada && !bloqueada) {
     return (
-      <div className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border border-white/5 opacity-30 line-through animate-fade-in-up`}
-        style={{ animationDelay: `${index * 50}ms` }}>
-        <span className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold bg-white/5 text-white/30">{letter}</span>
-        <span className="text-sm leading-snug flex-1 text-white/30 line-through">{stripLetraAlternativa(alternativa)}</span>
+      <div
+        className="w-full flex items-center gap-2 animate-fade-in-up"
+        style={{ animationDelay: `${index * 50}ms` }}
+      >
+        {/* Tesoura no início */}
+        <button
+          onClick={() => onOcultar(alternativa)}
+          title="Restaurar alternativa"
+          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg transition-all text-yellow-500/60 hover:text-yellow-400 hover:bg-yellow-500/10"
+        >
+          <IconeTesoura className="w-4 h-4" />
+        </button>
+        <div className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border border-white/5 opacity-30">
+          <span className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold bg-white/5 text-white/30">{letter}</span>
+          <span className="text-sm leading-snug flex-1 text-white/30 line-through">{stripLetraAlternativa(alternativa)}</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 animate-fade-in-up opacity-0" style={{ animationDelay: `${index * 50}ms`, animationFillMode: "forwards" }}>
+      {/* Tesoura no início — só aparece quando não bloqueada e não selecionada */}
+      {!bloqueada ? (
+        <button
+          onClick={() => onOcultar(alternativa)}
+          title="Eliminar alternativa"
+          className={`shrink-0 w-7 h-7 flex items-center justify-center rounded-lg transition-all border
+            ${isSelected
+              ? "opacity-0 pointer-events-none border-transparent"
+              : "text-muted-foreground/30 hover:text-red-400/80 hover:bg-red-500/10 border-transparent hover:border-red-500/20"
+            }`}
+        >
+          <IconeTesoura className="w-4 h-4" />
+        </button>
+      ) : (
+        <div className="shrink-0 w-7 h-7" /> /* espaçador para manter alinhamento */
+      )}
+
       <button
         onClick={() => !bloqueada && onSelect(alternativa)}
         disabled={bloqueada}
-        className={`question-option flex-1 flex items-center gap-3 px-4 py-3.5 rounded-xl border transition-all text-left animate-fade-in-up opacity-0 ${rowBg} ${borderClass} ${bloqueada ? "cursor-default" : ""}`}
-        style={{ animationDelay: `${index * 50}ms`, animationFillMode: "forwards" }}
+        className={`question-option flex-1 flex items-center gap-3 px-4 py-3.5 rounded-xl border transition-all text-left ${rowBg} ${borderClass} ${bloqueada ? "cursor-default" : ""}`}
       >
         <span className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${letterBg} ${pulse ? "animate-pulse" : ""}`}>
           {letter}
@@ -239,18 +286,6 @@ function OpcaoMultipla({ alternativa, index, respondida, selecionada, correta, r
           </span>
         )}
       </button>
-      {/* Botão cortar alternativa */}
-      {!bloqueada && !isSelected && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onOcultar(alternativa); }}
-          title="Eliminar alternativa"
-          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground/40 hover:text-destructive/70 hover:bg-destructive/10 transition-all border border-transparent hover:border-destructive/20"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      )}
     </div>
   );
 }
@@ -490,9 +525,10 @@ const QuestaoCard = ({
             )}
             {tipoQuestao === "multipla" && ocultas.size > 0 && !bloqueada && (
               <button onClick={() => setOcultas(new Set())}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-all hover:opacity-80"
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-all hover:opacity-80"
                 style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", color: "#fbbf24" }}>
-                ✂ {ocultas.size} eliminada{ocultas.size > 1 ? "s" : ""} · restaurar
+                <IconeTesoura className="w-3 h-3" />
+                {ocultas.size} eliminada{ocultas.size > 1 ? "s" : ""} · restaurar
               </button>
             )}
           </div>
@@ -521,7 +557,7 @@ const QuestaoCard = ({
 
         {/* Alternativas */}
         {tipoQuestao === "multipla" && (
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {alternativas.map((alt, i) => (
               <OpcaoMultipla
                 key={i} alternativa={alt} index={i} respondida={respondida}

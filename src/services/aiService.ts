@@ -1,7 +1,23 @@
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "./firebaseConfig";
+
+let cachedApiKey: string | null = null;
+
+async function getGeminiKey() {
+  if (cachedApiKey) return cachedApiKey;
+
+  const docSnap = await getDoc(doc(db, "configuracoes", "chaves"));
+  if (docSnap.exists()) {
+    cachedApiKey = docSnap.data().gemini;
+    return cachedApiKey;
+  }
+  throw new Error("Chave Gemini não encontrada no banco de dados.");
+}
 
 async function chamarGemini(prompt: string, temperature = 0.4): Promise<string> {
+  const apiKey = await getGeminiKey();
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
   const response = await fetch(GEMINI_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -151,10 +167,6 @@ ${textoAmostrado}`;
   }
 };
 
-// ============================================================
-// GERAÇÃO DE CONTEÚDO — QUESTÕES E FLASHCARDS
-// ============================================================
-
 export const gerarConteudoParaAssunto = async (
   assunto: Assunto,
   tipoQuestao: "simples" | "elaborada" = "elaborada",
@@ -169,7 +181,6 @@ Use seu conhecimento sobre este assunto para gerar questões de alto nível para
     : `CONTEÚDO DE REFERÊNCIA (NÃO mencione o material, apostila ou texto nas questões):
 ${textoBase.substring(0, 5000)}`;
 
-  // ── MODO FLASH: memorização rápida de conceitos, datas, penas, definições ──
   const promptFlash = `Você é elaborador de questões de memorização para concursos públicos brasileiros.
 
 ASSUNTO: ${assunto.titulo}
@@ -223,7 +234,6 @@ Retorne APENAS JSON puro válido sem markdown:
   ]
 }`;
 
-  // ── MODO CONCURSO: estilo CESPE/FCC com situações-problema ──
   const promptConcurso = `Você é elaborador sênior de provas de concursos públicos brasileiros (CESPE/CEBRASPE, FCC, VUNESP, FGV).
 
 ASSUNTO: ${assunto.titulo}
@@ -309,10 +319,6 @@ JSON APENAS:
   }
 };
 
-// ============================================================
-// REFORÇO
-// ============================================================
-
 export const gerarReforcoParaQuestao = async (
   perguntaOriginal: string,
   assunto: string
@@ -362,10 +368,6 @@ JSON APENAS:
     return { resumo: "Erro ao gerar reforço", questoes: [], flashcards: [] };
   }
 };
-
-// ============================================================
-// FEEDBACK DE DESEMPENHO
-// ============================================================
 
 export const gerarFeedbackDesempenho = async (
   taxaAcerto: number,

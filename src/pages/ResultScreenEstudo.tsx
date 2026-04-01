@@ -1,6 +1,5 @@
 // src/pages/ResultScreenEstudo.tsx
 import { useEffect, useState } from "react";
-import { gerarFeedbackDesempenho } from "../services/aiService";
 import Navbar from "../components/Navbar";
 
 interface ResultScreenProps {
@@ -15,8 +14,6 @@ interface ResultScreenProps {
 
 const ResultScreen = ({ acertos, total, puladas, navigate, materialId, assuntoId, onContinuar }: ResultScreenProps) => {
   const taxa = total > 0 ? Math.round((acertos / total) * 100) : 0;
-  const [feedback, setFeedback] = useState("Analisando seu desempenho...");
-  const [carregandoFeedback, setCarregandoFeedback] = useState(true);
   const size = 160;
   const radius = (size - 12) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -25,11 +22,6 @@ const ResultScreen = ({ acertos, total, puladas, navigate, materialId, assuntoId
 
   useEffect(() => {
     const t = setTimeout(() => setAnimR(taxa), 400);
-    setCarregandoFeedback(true);
-    gerarFeedbackDesempenho(taxa, [])
-      .then(setFeedback)
-      .catch(() => setFeedback("Continue praticando! A consistência é o diferencial para a aprovação."))
-      .finally(() => setCarregandoFeedback(false));
     return () => clearTimeout(t);
   }, [taxa]);
 
@@ -135,34 +127,6 @@ const ResultScreen = ({ acertos, total, puladas, navigate, materialId, assuntoId
                 <p className="text-xs text-muted-foreground">{s.label}</p>
               </div>
             ))}
-          </div>
-
-          {/* Feedback IA */}
-          <div
-            className="w-full rounded-2xl p-5 animate-fade-in-up opacity-0"
-            style={{
-              animationDelay: "650ms",
-              animationFillMode: "forwards",
-              border: "1px solid rgba(139,92,246,0.2)",
-              background: "rgba(139,92,246,0.06)",
-            }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center text-sm animate-brain-pulse">🧠</div>
-              <span className="text-xs font-semibold text-violet-400 uppercase tracking-wider">Feedback da IA</span>
-            </div>
-            {carregandoFeedback ? (
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <div className="ai-loading-dot" />
-                  <div className="ai-loading-dot" />
-                  <div className="ai-loading-dot" />
-                </div>
-                <span className="text-xs text-muted-foreground">Analisando desempenho...</span>
-              </div>
-            ) : (
-              <p className="text-sm text-white/80 leading-relaxed">{feedback}</p>
-            )}
           </div>
 
           {/* Botões de ação — 3 botões */}

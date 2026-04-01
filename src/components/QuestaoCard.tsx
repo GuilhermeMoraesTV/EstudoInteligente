@@ -1,12 +1,32 @@
-// src/components/QuestaoCard.tsx
+
 import { useState, useEffect } from "react";
+
+// ─── Componente para renderizar o negrito (**) visualmente ──────────────────
+function TextoComNegrito({ texto }: { texto: string }) {
+  if (!texto) return null;
+  // Divide a string nos pontos onde existe **...**
+  const parts = texto.split(/(\*\*.*?\*\*)/g);
+  return (
+    <>
+      {parts.map((p, i) => {
+        if (p.startsWith("**") && p.endsWith("**")) {
+          // Extrai o miolo sem os asteriscos e aplica a classe font-bold
+          return (
+            <strong key={i} className="font-bold text-white tracking-wide">
+              {p.slice(2, -2)}
+            </strong>
+          );
+        }
+        return p;
+      })}
+    </>
+  );
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 export function limparMarkdown(texto: string): string {
   return texto
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
     .replace(/__(.+?)__/g, "$1")
     .replace(/_(.+?)_/g, "$1")
     .replace(/`(.+?)`/g, "$1");
@@ -81,7 +101,7 @@ const IconeTesoura = ({ className = "" }: { className?: string }) => (
 
 function PerguntaFormatada({ texto }: { texto: string }) {
   const limpo = limparMarkdown(texto);
-  if (!limpo.includes("\n")) return <>{limpo}</>;
+  if (!limpo.includes("\n")) return <TextoComNegrito texto={limpo} />;
 
   const linhas = limpo.split("\n").map((l) => l.trim()).filter(Boolean);
   const preItens: string[] = [];
@@ -99,14 +119,14 @@ function PerguntaFormatada({ texto }: { texto: string }) {
   if (itens.length === 0) {
     return (
       <div className="space-y-1">
-        {linhas.map((l, i) => <p key={i}>{l}</p>)}
+        {linhas.map((l, i) => <p key={i}><TextoComNegrito texto={l} /></p>)}
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {preItens.length > 0 && <p className="leading-relaxed">{preItens.join(" ")}</p>}
+      {preItens.length > 0 && <p className="leading-relaxed"><TextoComNegrito texto={preItens.join(" ")} /></p>}
       <div className="rounded-xl p-4 space-y-2.5"
         style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)" }}>
         {itens.map((item, i) => {
@@ -118,14 +138,16 @@ function PerguntaFormatada({ texto }: { texto: string }) {
                   style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.35)", color: "#818cf8" }}>
                   {match[1].toUpperCase()}
                 </span>
-                <span className="text-sm leading-relaxed text-white/88 pt-0.5 flex-1">{match[2]}</span>
+                <span className="text-sm leading-relaxed text-white/88 pt-0.5 flex-1">
+                  <TextoComNegrito texto={match[2]} />
+                </span>
               </div>
             );
           }
-          return <p key={i} className="text-sm text-white/80">{item}</p>;
+          return <p key={i} className="text-sm text-white/80"><TextoComNegrito texto={item} /></p>;
         })}
       </div>
-      {posItens.length > 0 && <p className="text-sm font-semibold" style={{ color: "#a78bfa" }}>{posItens.join(" ")}</p>}
+      {posItens.length > 0 && <p className="text-sm font-semibold" style={{ color: "#a78bfa" }}><TextoComNegrito texto={posItens.join(" ")} /></p>}
     </div>
   );
 }
@@ -154,31 +176,31 @@ export function ExplicacaoFormatada({ texto, compacta = false }: { texto: string
           <div key={i} className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
             style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)" }}>
             <span className="text-success text-sm shrink-0 mt-0.5">✅</span>
-            <span className="text-sm leading-relaxed text-success font-medium">{p.conteudo}</span>
+            <span className="text-sm leading-relaxed text-success font-medium"><TextoComNegrito texto={p.conteudo} /></span>
           </div>
         );
         if (p.tipo === "errada") return (
           <div key={i} className={`flex items-start gap-2.5 px-4 py-3 rounded-xl ${compacta ? "py-2" : ""}`}
             style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <span className="text-white/35 text-sm shrink-0 mt-0.5">❌</span>
-            <span className="text-sm leading-relaxed text-white/50">{p.conteudo}</span>
+            <span className="text-sm leading-relaxed text-white/50"><TextoComNegrito texto={p.conteudo} /></span>
           </div>
         );
         if (p.tipo === "conceito") return (
           <div key={i} className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
             style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.25)" }}>
             <span className="text-violet-400 text-sm shrink-0 mt-0.5">📌</span>
-            <span className="text-sm leading-relaxed text-violet-300 font-semibold">{p.conteudo}</span>
+            <span className="text-sm leading-relaxed text-violet-300 font-semibold"><TextoComNegrito texto={p.conteudo} /></span>
           </div>
         );
         if (p.tipo === "dica") return (
           <div key={i} className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
             style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)" }}>
             <span className="text-yellow-400 text-sm shrink-0 mt-0.5">💡</span>
-            <span className="text-sm leading-relaxed text-yellow-300">{p.conteudo}</span>
+            <span className="text-sm leading-relaxed text-yellow-300"><TextoComNegrito texto={p.conteudo} /></span>
           </div>
         );
-        return <p key={i} className="text-sm leading-relaxed text-white/75 px-1">{p.conteudo}</p>;
+        return <p key={i} className="text-sm leading-relaxed text-white/75 px-1"><TextoComNegrito texto={p.conteudo} /></p>;
       })}
     </div>
   );
@@ -212,14 +234,12 @@ function OpcaoMultipla({ alternativa, index, respondida, selecionada, correta, r
     letterBg = "bg-violet-500/30 text-violet-300";
   }
 
-  // Se ocultada (cortada), mostra diferente
   if (ocultada && !bloqueada) {
     return (
       <div
         className="w-full flex items-center gap-2 animate-fade-in-up"
         style={{ animationDelay: `${index * 50}ms` }}
       >
-        {/* Tesoura no início */}
         <button
           onClick={() => onOcultar(alternativa)}
           title="Restaurar alternativa"
@@ -229,7 +249,9 @@ function OpcaoMultipla({ alternativa, index, respondida, selecionada, correta, r
         </button>
         <div className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border border-white/5 opacity-30">
           <span className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold bg-white/5 text-white/30">{letter}</span>
-          <span className="text-sm leading-snug flex-1 text-white/30 line-through">{stripLetraAlternativa(alternativa)}</span>
+          <span className="text-sm leading-snug flex-1 text-white/30 line-through">
+            <TextoComNegrito texto={stripLetraAlternativa(alternativa)} />
+          </span>
         </div>
       </div>
     );
@@ -237,7 +259,6 @@ function OpcaoMultipla({ alternativa, index, respondida, selecionada, correta, r
 
   return (
     <div className="flex items-center gap-2 animate-fade-in-up opacity-0" style={{ animationDelay: `${index * 50}ms`, animationFillMode: "forwards" }}>
-      {/* Tesoura no início — só aparece quando não bloqueada e não selecionada */}
       {!bloqueada ? (
         <button
           onClick={() => onOcultar(alternativa)}
@@ -251,7 +272,7 @@ function OpcaoMultipla({ alternativa, index, respondida, selecionada, correta, r
           <IconeTesoura className="w-4 h-4" />
         </button>
       ) : (
-        <div className="shrink-0 w-7 h-7" /> /* espaçador para manter alinhamento */
+        <div className="shrink-0 w-7 h-7" />
       )}
 
       <button
@@ -265,7 +286,7 @@ function OpcaoMultipla({ alternativa, index, respondida, selecionada, correta, r
         <span className="text-sm leading-snug flex-1" style={{
           color: bloqueada && isCorrect ? "#34d399" : bloqueada && isSelected && !isCorrect && !revelada ? "#f87171" : undefined,
         }}>
-          {stripLetraAlternativa(alternativa)}
+          <TextoComNegrito texto={stripLetraAlternativa(alternativa)} />
         </span>
         {bloqueada && isCorrect && (
           <span className="shrink-0 flex items-center gap-1.5 text-success text-xs font-bold">
@@ -324,7 +345,9 @@ function OpcaoCertoErrado({ alternativa, respondida, selecionada, correta, revel
       className={`flex-1 flex flex-col items-center gap-3 py-6 px-4 rounded-2xl border-2 transition-all duration-250 ${scale} ${bloqueada ? "cursor-default" : "hover:scale-[1.02] active:scale-[0.98]"}`}
       style={{ background: bg, borderColor: border }}>
       <span className="text-3xl" style={{ color: iconColor }}>{isCerto ? "✓" : "✗"}</span>
-      <span className="text-base font-bold" style={{ color: textColor }}>{textoLimpo.charAt(0).toUpperCase() + textoLimpo.slice(1)}</span>
+      <span className="text-base font-bold" style={{ color: textColor }}>
+        <TextoComNegrito texto={textoLimpo.charAt(0).toUpperCase() + textoLimpo.slice(1)} />
+      </span>
       {bloqueada && isCorrect && (
         <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
           style={{ background: "rgba(52,211,153,0.2)", color: "#34d399", border: "1px solid rgba(52,211,153,0.3)" }}>
@@ -339,11 +362,12 @@ function OpcaoCertoErrado({ alternativa, respondida, selecionada, correta, revel
   );
 }
 
-// ─── Associação / Julgamento ─────────────────────────────────────────────────
+// ─── Associação / Julgamento — COM TESOURA ───────────────────────────────────
 
-function QuestaoAssociacao({ alternativas, correta, respondida, selecionada, revelada, onSelect }: {
+function QuestaoAssociacao({ alternativas, correta, respondida, selecionada, revelada, onSelect, ocultas, onOcultar }: {
   alternativas: string[]; correta: string; respondida: boolean; selecionada: string | null;
   revelada: boolean; onSelect: (alt: string) => void;
+  ocultas: Set<string>; onOcultar: (alt: string) => void;
 }) {
   const bloqueada = respondida || revelada;
   return (
@@ -358,6 +382,7 @@ function QuestaoAssociacao({ alternativas, correta, respondida, selecionada, rev
         const isSelected = alt === selecionada;
         const isCorrect = alt === correta;
         const textoLimpo = stripLetraAlternativa(alt);
+        const ocultada = ocultas.has(alt);
 
         let bg = "rgba(255,255,255,0.02)";
         let border = "rgba(255,255,255,0.08)";
@@ -371,32 +396,86 @@ function QuestaoAssociacao({ alternativas, correta, respondida, selecionada, rev
           else { border = "rgba(255,255,255,0.04)"; textColor = "rgba(255,255,255,0.3)"; letterStyle = { bg: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.25)" }; }
         }
 
+        // Ocultada (cortada)
+        if (ocultada && !bloqueada) {
+          return (
+            <div key={i} className="flex items-center gap-2 animate-fade-in-up" style={{ animationDelay: `${i * 60}ms` }}>
+              <button
+                onClick={() => onOcultar(alt)}
+                title="Restaurar alternativa"
+                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg transition-all text-yellow-500/60 hover:text-yellow-400 hover:bg-yellow-500/10"
+              >
+                <IconeTesoura className="w-4 h-4" />
+              </button>
+              <div className="flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border border-white/5 opacity-30">
+                <span className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold bg-white/5 text-white/30">{letter}</span>
+                <span className="text-sm leading-snug flex-1 text-white/30 line-through">
+                  <TextoComNegrito texto={textoLimpo} />
+                </span>
+              </div>
+            </div>
+          );
+        }
+
         return (
-          <button key={i} onClick={() => !bloqueada && onSelect(alt)} disabled={bloqueada}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left animate-fade-in-up opacity-0 ${bloqueada ? "cursor-default" : "hover:border-indigo-500/40 hover:bg-white/5"}`}
-            style={{ background: bg, borderColor: border, animationDelay: `${i * 60}ms`, animationFillMode: "forwards" }}>
-            <span className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
-              style={{ background: letterStyle.bg, color: letterStyle.color }}>{letter}</span>
-            <span className="text-sm leading-snug flex-1" style={{ color: textColor }}>{textoLimpo}</span>
-            {bloqueada && isCorrect && (
-              <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center"
-                style={{ background: "rgba(52,211,153,0.2)", border: "1px solid rgba(52,211,153,0.4)" }}>
-                <svg className="w-3.5 h-3.5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              </span>
+          <div key={i} className="flex items-center gap-2 animate-fade-in-up opacity-0" style={{ animationDelay: `${i * 60}ms`, animationFillMode: "forwards" }}>
+            {/* Tesoura para associação */}
+            {!bloqueada ? (
+              <button
+                onClick={() => onOcultar(alt)}
+                title="Eliminar alternativa"
+                className={`shrink-0 w-7 h-7 flex items-center justify-center rounded-lg transition-all border
+                  ${isSelected
+                    ? "opacity-0 pointer-events-none border-transparent"
+                    : "text-muted-foreground/30 hover:text-red-400/80 hover:bg-red-500/10 border-transparent hover:border-red-500/20"
+                  }`}
+              >
+                <IconeTesoura className="w-4 h-4" />
+              </button>
+            ) : (
+              <div className="shrink-0 w-7 h-7" />
             )}
-            {bloqueada && isSelected && !isCorrect && !revelada && (
-              <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-destructive"
-                style={{ background: "rgba(248,113,113,0.2)", border: "1px solid rgba(248,113,113,0.4)" }}>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+
+            <button onClick={() => !bloqueada && onSelect(alt)} disabled={bloqueada}
+              className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${bloqueada ? "cursor-default" : "hover:border-indigo-500/40 hover:bg-white/5"}`}
+              style={{ background: bg, borderColor: border, animationFillMode: "forwards" }}>
+              <span className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
+                style={{ background: letterStyle.bg, color: letterStyle.color }}>{letter}</span>
+              <span className="text-sm leading-snug flex-1" style={{ color: textColor }}>
+                <TextoComNegrito texto={textoLimpo} />
               </span>
-            )}
-          </button>
+              {bloqueada && isCorrect && (
+                <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ background: "rgba(52,211,153,0.2)", border: "1px solid rgba(52,211,153,0.4)" }}>
+                  <svg className="w-3.5 h-3.5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+              )}
+              {bloqueada && isSelected && !isCorrect && !revelada && (
+                <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-destructive"
+                  style={{ background: "rgba(248,113,113,0.2)", border: "1px solid rgba(248,113,113,0.4)" }}>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </span>
+              )}
+            </button>
+          </div>
         );
       })}
+
+      {/* Botão restaurar todas (associação) */}
+      {ocultas.size > 0 && !bloqueada && (
+        <button
+          onClick={() => alternativas.forEach((alt) => ocultas.has(alt) && onOcultar(alt))}
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-all hover:opacity-80 mt-1"
+          style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)", color: "#fbbf24" }}
+        >
+          <IconeTesoura className="w-3 h-3" />
+          {ocultas.size} eliminada{ocultas.size > 1 ? "s" : ""} · restaurar
+        </button>
+      )}
     </div>
   );
 }
@@ -470,7 +549,8 @@ const QuestaoCard = ({
     setSelecionada(null);
     setRevelada(false);
     setShowExplicacao(false);
-    setOcultas(new Set());
+    setOcultas(new Set())
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }, [indice, pergunta]);
 
   useEffect(() => {
@@ -523,6 +603,7 @@ const QuestaoCard = ({
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
                 style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", color: "#818cf8" }}>🔗 Associação</span>
             )}
+            {/* Botão restaurar eliminadas (múltipla escolha) */}
             {tipoQuestao === "multipla" && ocultas.size > 0 && !bloqueada && (
               <button onClick={() => setOcultas(new Set())}
                 className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-all hover:opacity-80"
@@ -578,8 +659,11 @@ const QuestaoCard = ({
         )}
 
         {tipoQuestao === "associacao" && (
-          <QuestaoAssociacao alternativas={alternativas} correta={correta} respondida={respondida}
-            selecionada={selecionada} revelada={revelada} onSelect={handleSelect} />
+          <QuestaoAssociacao
+            alternativas={alternativas} correta={correta} respondida={respondida}
+            selecionada={selecionada} revelada={revelada} onSelect={handleSelect}
+            ocultas={ocultas} onOcultar={handleOcultarAlternativa}
+          />
         )}
 
         {/* Botões de ação */}

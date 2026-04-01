@@ -1,3 +1,4 @@
+// src/services/firebaseService.ts
 import {
   collection,
   doc,
@@ -93,7 +94,12 @@ export const buscarMaterialPorId = async (materialId: string): Promise<Material 
 export const excluirMaterial = async (materialId: string, userId: string): Promise<void> => {
   await deleteDoc(doc(db, "materiais", materialId));
 
-  const qQuestoes = query(collection(db, "questoes"), where("userId", "==", userId), where("materialId", "==", materialId));
+  // Exclui questões do material
+  const qQuestoes = query(
+    collection(db, "questoes"),
+    where("userId", "==", userId),
+    where("materialId", "==", materialId)
+  );
   const snapQuestoes = await getDocs(qQuestoes);
   if (snapQuestoes.docs.length > 0) {
     const b = writeBatch(db);
@@ -101,13 +107,25 @@ export const excluirMaterial = async (materialId: string, userId: string): Promi
     await b.commit();
   }
 
-  const qFlash = query(collection(db, "flashcards"), where("userId", "==", userId), where("materialId", "==", materialId));
-  const snapFlash = await getDocs(qFlash);
-  if (snapFlash.docs.length > 0) {
-    const b = writeBatch(db);
-    snapFlash.docs.forEach((d) => b.delete(d.ref));
-    await b.commit();
-  }
+};
+
+
+export const excluirFlashcardsPorAssunto = async (
+  userId: string,
+  materialId: string,
+  assuntoId: string
+): Promise<void> => {
+  const q = query(
+    collection(db, "flashcards"),
+    where("userId", "==", userId),
+    where("materialId", "==", materialId),
+    where("assuntoId", "==", assuntoId)
+  );
+  const snap = await getDocs(q);
+  if (snap.docs.length === 0) return;
+  const b = writeBatch(db);
+  snap.docs.forEach((d) => b.delete(d.ref));
+  await b.commit();
 };
 
 export const renomearMaterial = async (materialId: string, novoTitulo: string): Promise<void> => {
@@ -220,7 +238,6 @@ export const salvarFlashcards = async (
   return ids;
 };
 
-// Criar flashcard manual (sem material vinculado ou com material)
 export const criarFlashcardManual = async (
   userId: string,
   frente: string,

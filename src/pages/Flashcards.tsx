@@ -14,6 +14,7 @@ import {
   editarFlashcard,
   criarFlashcardManual,
   salvarFlashcards,
+  excluirFlashcardsPorAssunto,
   Flashcard,
   Material,
 } from "../services/firebaseService";
@@ -34,34 +35,17 @@ interface GrupoAssunto {
   cards: Flashcard[];
 }
 
-// ─── Limpar conteúdo de flashcard inválido ──────────────────────────────────
 function limparConteudoFlashcard(texto: string): string {
   return texto
-    // Remove alternativas tipo A) B) C) D) E)
     .replace(/^[A-E]\)\s+.+$/gm, "")
-    // Remove marcadores de gabarito
     .replace(/^✅.*$/gm, "")
     .replace(/^❌.*$/gm, "")
     .replace(/^📌.*$/gm, "")
     .replace(/^💡.*$/gm, "")
-    // Remove "CORRETA: X)" e variantes
     .replace(/CORRETA?\s*[A-E]\)?\s*:?[^\n]*/gi, "")
-    // Remove "Alternativas:" e variantes
     .replace(/Alternativas?:?[^\n]*/gi, "")
-    // Normaliza espaços/linhas
     .replace(/\n{2,}/g, "\n")
     .trim();
-}
-
-function flashcardEhValido(fc: Flashcard): boolean {
-  const frente = limparConteudoFlashcard(fc.frente);
-  const verso = limparConteudoFlashcard(fc.verso);
-  // Invalido se frente parece ser uma questão com alternativas
-  const temAlternativas = /[A-E]\)\s+\w/.test(fc.frente) || /[A-E]\)\s+\w/.test(fc.verso);
-  if (temAlternativas) return false;
-  // Invalido se muito curto após limpeza
-  if (frente.length < 5 || verso.length < 5) return false;
-  return true;
 }
 
 // ─── EmptyState ─────────────────────────────────────────────────────────────
@@ -154,7 +138,6 @@ const ModalCriarFlashcard = ({
       <div className="w-full sm:max-w-lg animate-scale-in rounded-t-3xl sm:rounded-3xl overflow-hidden"
         style={{ border: "1px solid rgba(139,92,246,0.3)", background: "rgba(16,14,30,0.98)", maxHeight: "92vh", overflowY: "auto" }}>
 
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/8 sticky top-0 z-10"
           style={{ background: "rgba(16,14,30,0.98)" }}>
           <div className="flex items-center gap-2">
@@ -169,7 +152,6 @@ const ModalCriarFlashcard = ({
         </div>
 
         <div className="p-5 space-y-5">
-          {/* Dica de formato */}
           <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl"
             style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)" }}>
             <span className="text-violet-400 text-sm shrink-0">💡</span>
@@ -178,7 +160,6 @@ const ModalCriarFlashcard = ({
             </p>
           </div>
 
-          {/* Frente */}
           <div>
             <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">Frente — Pergunta / Conceito</label>
             <textarea value={frente} onChange={(e) => setFrente(e.target.value)} rows={3}
@@ -186,7 +167,6 @@ const ModalCriarFlashcard = ({
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30 resize-none transition-all text-center" />
           </div>
 
-          {/* Verso */}
           <div>
             <label className="block text-xs font-semibold text-success uppercase tracking-wider mb-2">Verso — Resposta / Definição</label>
             <textarea value={verso} onChange={(e) => setVerso(e.target.value)} rows={3}
@@ -194,7 +174,6 @@ const ModalCriarFlashcard = ({
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-success/60 focus:ring-1 focus:ring-success/30 resize-none transition-all text-center" />
           </div>
 
-          {/* Organização */}
           <div>
             <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Organização</label>
             <div className="flex gap-2 mb-4">
@@ -214,7 +193,6 @@ const ModalCriarFlashcard = ({
                 <input type="text" value={tituloManual} onChange={(e) => setTituloManual(e.target.value)}
                   placeholder="Ex: Direito Constitucional, Português..."
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted-foreground/40 outline-none focus:border-violet-500/60 transition-all" />
-                <p className="text-[10px] text-muted-foreground mt-1.5">Se vazio, será salvo em "Criados manualmente"</p>
               </div>
             )}
 
@@ -271,15 +249,14 @@ const ModalCriarFlashcard = ({
   );
 };
 
-// ─── Novos botões de avaliação ───────────────────────────────────────────────
+// ─── Botões de avaliação ─────────────────────────────────────────────────────
 const RatingButtons = ({ onRating, disabled }: { onRating: (q: number) => void; disabled?: boolean }) => {
   const ratings = [
     {
       qualidade: 0,
       label: "Não lembrei",
-      sublabel: "Revisar em breve",
+      sublabel: "4 reforços",
       colorFrom: "#f87171",
-      colorTo: "#ef4444",
       borderColor: "rgba(248,113,113,0.35)",
       bg: "rgba(248,113,113,0.07)",
       icon: (
@@ -293,9 +270,8 @@ const RatingButtons = ({ onRating, disabled }: { onRating: (q: number) => void; 
     {
       qualidade: 1,
       label: "Com esforço",
-      sublabel: "Preciso praticar",
+      sublabel: "2 reforços",
       colorFrom: "#fbbf24",
-      colorTo: "#f59e0b",
       borderColor: "rgba(251,191,36,0.35)",
       bg: "rgba(251,191,36,0.07)",
       icon: (
@@ -309,7 +285,6 @@ const RatingButtons = ({ onRating, disabled }: { onRating: (q: number) => void; 
       label: "Lembrei bem",
       sublabel: "Próximo intervalo",
       colorFrom: "#34d399",
-      colorTo: "#10b981",
       borderColor: "rgba(52,211,153,0.35)",
       bg: "rgba(52,211,153,0.07)",
       icon: (
@@ -331,10 +306,7 @@ const RatingButtons = ({ onRating, disabled }: { onRating: (q: number) => void; 
             onClick={() => !disabled && onRating(r.qualidade)}
             disabled={disabled}
             className="flex-1 flex flex-col items-center gap-2 py-3.5 px-2 rounded-2xl border-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              background: r.bg,
-              borderColor: r.borderColor,
-            }}
+            style={{ background: r.bg, borderColor: r.borderColor }}
             onMouseEnter={(e) => {
               if (!disabled) {
                 e.currentTarget.style.transform = "scale(1.04)";
@@ -358,7 +330,7 @@ const RatingButtons = ({ onRating, disabled }: { onRating: (q: number) => void; 
   );
 };
 
-// ─── Score Ring — sem SVG background, sem classe que gera quadrado ───────────
+// ─── Score Ring ───────────────────────────────────────────────────────────────
 const ScoreRingFlash = ({ value, size = 100 }: { value: number; size?: number }) => {
   const radius = (size - 10) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -366,11 +338,7 @@ const ScoreRingFlash = ({ value, size = 100 }: { value: number; size?: number })
   const offset = circumference - (value / 100) * circumference;
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg
-        width={size}
-        height={size}
-        style={{ transform: "rotate(-90deg)", display: "block" }}
-      >
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)", display: "block" }}>
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
         <circle
           cx={size / 2} cy={size / 2} r={radius}
@@ -386,15 +354,16 @@ const ScoreRingFlash = ({ value, size = 100 }: { value: number; size?: number })
   );
 };
 
-// ─── FlashcardSession ────────────────────────────────────────────────────────
+// ─── FlashcardSession — com reforço adaptativo ─────────────
 const FlashcardSession = ({
-  cards, grupo, onVoltar, modoRevisao, userId,
+  cards, grupo, onVoltar, modoRevisao, userId, onNovosPendentes,
 }: {
   cards: Flashcard[];
   grupo: GrupoAssunto;
   onVoltar: () => void;
   modoRevisao: ModoRevisao;
   userId: string;
+  onNovosPendentes?: (quantidade: number) => void;
 }) => {
   const navigate = useNavigate();
   const [indiceAtual, setIndiceAtual] = useState(0);
@@ -410,6 +379,7 @@ const FlashcardSession = ({
   const [cardsLocais, setCardsLocais] = useState<Flashcard[]>(cards);
   const [gerandoReforco, setGerandoReforco] = useState(false);
   const [toastReforco, setToastReforco] = useState("");
+  const [reforcosCriados, setReforcosCriados] = useState(0);
 
   const flashcardAtual = cardsLocais[indiceAtual];
 
@@ -433,18 +403,20 @@ const FlashcardSession = ({
       await atualizarFlashcard(flashcardAtual.id, qualidade, modoRevisao);
       await registrarResposta(userId, "flashcard", flashcardAtual.id, qualidade > 0, 0);
 
-      // Se errou ou achou difícil: gera reforço em background
       if (qualidade <= 1) {
+        const quantidadeReforco = qualidade === 0 ? 4 : 2;
         setGerandoReforco(true);
-        setToastReforco("Gerando flashcards de reforço...");
+        setToastReforco(`Gerando ${quantidadeReforco} flashcards de reforço...`);
+
         gerarReforcoParaFlashcard(
           flashcardAtual.frente,
           flashcardAtual.verso,
-          grupo.assuntoTitulo
+          grupo.assuntoTitulo,
+          quantidadeReforco
         )
           .then(async (novosCards) => {
             if (novosCards.length > 0) {
-              await salvarFlashcards(
+              const ids = await salvarFlashcards(
                 userId,
                 grupo.materialId,
                 grupo.assuntoId,
@@ -453,8 +425,14 @@ const FlashcardSession = ({
                 "gerado",
                 grupo.materialTitulo
               );
-              setToastReforco(`✓ ${novosCards.length} flashcard${novosCards.length > 1 ? "s" : ""} de reforço criado${novosCards.length > 1 ? "s" : ""}!`);
-              setTimeout(() => setToastReforco(""), 3000);
+
+              // MELHORIA 3.1: atualiza contagem em tempo real
+              const qtd = ids.length;
+              setReforcosCriados((p) => p + qtd);
+              if (onNovosPendentes) onNovosPendentes(qtd);
+
+              setToastReforco(`✓ ${qtd} flashcard${qtd > 1 ? "s" : ""} de reforço criado${qtd > 1 ? "s" : ""}!`);
+              setTimeout(() => setToastReforco(""), 3500);
             }
           })
           .catch(() => setToastReforco(""))
@@ -507,7 +485,6 @@ const FlashcardSession = ({
       <div className="fixed inset-0 grid-pattern opacity-15 pointer-events-none" />
       <Navbar />
 
-      {/* Toast reforço */}
       {toastReforco && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-fade-in-down pointer-events-none">
           <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl glass-strong"
@@ -521,7 +498,6 @@ const FlashcardSession = ({
       )}
 
       <main className="relative mx-auto max-w-xl px-4 pt-20 sm:pt-24 pb-16">
-        {/* Header */}
         <div className="mb-5 animate-fade-in-down">
           <button onClick={onVoltar} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors mb-4">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -535,6 +511,12 @@ const FlashcardSession = ({
               <span className={`px-2 py-0.5 rounded-md text-[10px] border ${modoRevisao === "espacada" ? "bg-violet-500/10 border-violet-500/20 text-violet-400" : "bg-blue-500/10 border-blue-500/20 text-blue-400"}`}>
                 {modoRevisao === "espacada" ? "🧠 SM-2" : "📅 Diária"}
               </span>
+              {/* MELHORIA 3.1: mostra reforços criados em tempo real */}
+              {reforcosCriados > 0 && (
+                <span className="px-2 py-0.5 rounded-md text-[10px] border bg-amber-500/10 border-amber-500/20 text-amber-400 animate-fade-in">
+                  +{reforcosCriados} reforços
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="hidden sm:inline">{revisados} revisados</span>
@@ -547,7 +529,6 @@ const FlashcardSession = ({
           </div>
         </div>
 
-        {/* Badge de origem */}
         {flashcardAtual?.origem === "erro" && (
           <div className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3C6.477 3 2 7.477 2 13s4.477 10 10 10 10-4.477 10-10S17.523 3 12 3z" /></svg>
@@ -561,7 +542,6 @@ const FlashcardSession = ({
           </div>
         )}
 
-        {/* Modo edição */}
         {editando ? (
           <div className="glass-strong rounded-3xl p-5 mb-4 space-y-4 animate-scale-in" style={{ border: "1px solid rgba(139,92,246,0.2)" }}>
             <h3 className="text-sm font-bold text-white">Editar Flashcard</h3>
@@ -585,7 +565,6 @@ const FlashcardSession = ({
           </div>
         ) : (
           <>
-            {/* Card com flip */}
             <div className="relative cursor-pointer" style={{ height: "280px", perspective: "1400px" }} onClick={handleFlip}>
               <div style={{
                 position: "absolute", inset: 0,
@@ -594,7 +573,6 @@ const FlashcardSession = ({
                 transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
                 opacity,
               }}>
-                {/* FRENTE */}
                 <div style={{
                   position: "absolute", inset: 0,
                   backfaceVisibility: "hidden",
@@ -619,7 +597,6 @@ const FlashcardSession = ({
                       </svg>
                     </button>
                   </div>
-                  {/* Texto centralizado */}
                   <div className="flex-1 overflow-y-auto flex items-center justify-center">
                     <p className="text-base sm:text-lg text-white font-medium leading-relaxed text-center w-full">
                       {limparConteudoFlashcard(flashcardAtual?.frente || "")}
@@ -637,7 +614,6 @@ const FlashcardSession = ({
                   )}
                 </div>
 
-                {/* VERSO */}
                 <div style={{
                   position: "absolute", inset: 0,
                   backfaceVisibility: "hidden",
@@ -665,7 +641,6 @@ const FlashcardSession = ({
                       </svg>
                     </button>
                   </div>
-                  {/* Texto centralizado */}
                   <div className="flex-1 overflow-y-auto flex items-center justify-center">
                     <p className="text-base text-white font-medium leading-relaxed text-center w-full">
                       {limparConteudoFlashcard(flashcardAtual?.verso || "")}
@@ -675,7 +650,6 @@ const FlashcardSession = ({
               </div>
             </div>
 
-            {/* Dots */}
             <div className="flex justify-center gap-1 mt-4 mb-5">
               {Array.from({ length: Math.min(cardsLocais.length, 7) }, (_, i) => (
                 <div key={i} className="h-1 rounded-full transition-all duration-300"
@@ -683,7 +657,6 @@ const FlashcardSession = ({
               ))}
             </div>
 
-            {/* Rating buttons */}
             <div className={`transition-all duration-400 ${flipped ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
               <RatingButtons onRating={handleAvaliacao} disabled={processando} />
             </div>
@@ -713,6 +686,9 @@ const Flashcards = () => {
   const [modalCriar, setModalCriar] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const [toastVisible, setToastVisible] = useState(false);
+  const [totalPendentesRT, setTotalPendentesRT] = useState(0);
+  const [excluindoGrupo, setExcluindoGrupo] = useState<string | null>(null);
+  const [confirmarExclusaoGrupo, setConfirmarExclusaoGrupo] = useState<string | null>(null);
 
   const mostrarToast = (msg: string) => {
     setToastMsg(msg);
@@ -733,6 +709,7 @@ const Flashcards = () => {
       if (perfil?.modoRevisao) setModoRevisao(perfil.modoRevisao);
       setMateriais(mats);
       const pendentesIds = new Set(pendentes.map((p) => p.id));
+      setTotalPendentesRT(pendentes.length);
 
       const mapa = new Map<string, GrupoAssunto>();
       for (const fc of todos) {
@@ -759,6 +736,21 @@ const Flashcards = () => {
 
   useEffect(() => { carregarDados(); }, [carregarDados]);
 
+
+  const handleNovosPendentes = useCallback((quantidade: number) => {
+    setTotalPendentesRT((prev) => prev + quantidade);
+    // Atualiza também o grupo selecionado
+    if (grupoSelecionado) {
+      setGrupos((prev) =>
+        prev.map((g) =>
+          g.chave === grupoSelecionado.chave
+            ? { ...g, pendentes: g.pendentes + quantidade, total: g.total + quantidade }
+            : g
+        )
+      );
+    }
+  }, [grupoSelecionado]);
+
   const handleModoRevisao = async (modo: ModoRevisao) => {
     setModoRevisao(modo);
     if (!usuario) return;
@@ -778,6 +770,30 @@ const Flashcards = () => {
     setModalCriar(false);
     mostrarToast("✅ Flashcard criado com sucesso!");
     await carregarDados();
+  };
+
+
+  const handleExcluirGrupo = async (grupo: GrupoAssunto, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!usuario) return;
+
+    if (confirmarExclusaoGrupo === grupo.chave) {
+      setExcluindoGrupo(grupo.chave);
+      setConfirmarExclusaoGrupo(null);
+      try {
+        await excluirFlashcardsPorAssunto(usuario.uid, grupo.materialId, grupo.assuntoId);
+        setGrupos((prev) => prev.filter((g) => g.chave !== grupo.chave));
+        setTotalPendentesRT((prev) => Math.max(0, prev - grupo.pendentes));
+        mostrarToast("🗑️ Flashcards do assunto excluídos.");
+      } catch {
+        mostrarToast("Erro ao excluir. Tente novamente.");
+      } finally {
+        setExcluindoGrupo(null);
+      }
+    } else {
+      setConfirmarExclusaoGrupo(grupo.chave);
+      setTimeout(() => setConfirmarExclusaoGrupo((cur) => cur === grupo.chave ? null : cur), 3500);
+    }
   };
 
   if (carregando) {
@@ -817,9 +833,10 @@ const Flashcards = () => {
       <FlashcardSession
         cards={cards}
         grupo={grupoSelecionado}
-        onVoltar={() => setGrupoSelecionado(null)}
+        onVoltar={() => { setGrupoSelecionado(null); carregarDados(); }}
         modoRevisao={modoRevisao}
         userId={usuario!.uid}
+        onNovosPendentes={handleNovosPendentes}
       />
     );
   }
@@ -839,21 +856,19 @@ const Flashcards = () => {
     );
   }
 
-  const totalPendentes = grupos.reduce((acc, g) => acc + g.pendentes, 0);
   const materiaisUnicos = Array.from(new Map(grupos.map((g) => [g.materialId, g.materialTitulo])).entries());
   const ordenarGrupos = (gs: GrupoAssunto[]) => {
     if (ordemGrupo === "pendentes") return [...gs].sort((a, b) => b.pendentes - a.pendentes);
     return [...gs].sort((a, b) => a.assuntoTitulo.localeCompare(b.assuntoTitulo));
   };
   const totalCards = grupos.reduce((a, g) => a + g.total, 0);
-  const taxaGeral = totalCards > 0 ? Math.round(((totalCards - totalPendentes) / totalCards) * 100) : 0;
+  const taxaGeral = totalCards > 0 ? Math.round(((totalCards - totalPendentesRT) / totalCards) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="fixed inset-0 grid-pattern opacity-20 pointer-events-none" />
       <Navbar />
 
-      {/* Toast */}
       {toastVisible && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-fade-in-down pointer-events-none">
           <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl glass-strong"
@@ -864,22 +879,20 @@ const Flashcards = () => {
       )}
 
       <main className="relative mx-auto max-w-4xl px-4 pt-20 sm:pt-24 pb-24">
-        {/* Header + Botão criar */}
         <div className={`mb-6 transition-all duration-700 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}`}>
           <span className="text-xs font-medium text-violet-400 uppercase tracking-widest">Repetição Espaçada</span>
           <div className="flex items-start justify-between mt-2 gap-4">
             <div>
               <h1 className="text-3xl sm:text-4xl font-bold text-white" style={{ fontFamily: "Syne, sans-serif" }}>Flashcards</h1>
+              {/* MELHORIA 3.1: usa totalPendentesRT */}
               <p className="mt-1.5 text-muted-foreground text-sm">
-                {totalPendentes > 0
-                  ? <><span className="text-yellow-400 font-semibold">{totalPendentes}</span> pendente{totalPendentes !== 1 ? "s" : ""} · {totalCards} total</>
+                {totalPendentesRT > 0
+                  ? <><span className="text-yellow-400 font-semibold">{totalPendentesRT}</span> pendente{totalPendentesRT !== 1 ? "s" : ""} · {totalCards} total</>
                   : "Todos em dia! 🎉"}
               </p>
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              {/* Score ring sem quadrado */}
               <ScoreRingFlash value={taxaGeral} size={64} />
-              {/* Botão criar — bem visível */}
               <button
                 onClick={() => setModalCriar(true)}
                 className="btn-primary flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
@@ -895,7 +908,6 @@ const Flashcards = () => {
           </div>
         </div>
 
-        {/* Seletor de modo */}
         <div className={`mb-4 transition-all duration-700 delay-100 ${visible ? "opacity-100" : "opacity-0"}`}>
           <div className="glass rounded-2xl p-4 border border-white/10">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Modo de Revisão</p>
@@ -919,7 +931,6 @@ const Flashcards = () => {
           </div>
         </div>
 
-        {/* Filtros */}
         <div className={`flex flex-wrap gap-2 mb-6 transition-all duration-700 delay-150 ${visible ? "opacity-100" : "opacity-0"}`}>
           <button onClick={() => setFiltroPendentes(false)}
             className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${!filtroPendentes ? "bg-violet-500/20 border-violet-500/40 text-violet-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
@@ -928,8 +939,8 @@ const Flashcards = () => {
           <button onClick={() => setFiltroPendentes(true)}
             className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border flex items-center gap-2 ${filtroPendentes ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-300" : "border-white/10 text-muted-foreground hover:text-white"}`}>
             Pendentes
-            {totalPendentes > 0 && (
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500/30 text-yellow-400 text-[10px] font-bold">{totalPendentes}</span>
+            {totalPendentesRT > 0 && (
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-500/30 text-yellow-400 text-[10px] font-bold">{totalPendentesRT}</span>
             )}
           </button>
           <div className="w-px bg-white/10 self-stretch mx-1" />
@@ -943,7 +954,6 @@ const Flashcards = () => {
           </button>
         </div>
 
-        {/* Grupos por material */}
         <div className="space-y-8">
           {materiaisUnicos.map(([materialId, materialTitulo]) => {
             const gruposMat = ordenarGrupos(grupos.filter((g) => g.materialId === materialId));
@@ -974,6 +984,8 @@ const Flashcards = () => {
                   {gruposMat.map((grupo, idx) => {
                     const hasPendentes = grupo.pendentes > 0;
                     const pct = grupo.total > 0 ? ((grupo.total - grupo.pendentes) / grupo.total) * 100 : 0;
+                    const isExcluindo = excluindoGrupo === grupo.chave;
+                    const isConfirmando = confirmarExclusaoGrupo === grupo.chave;
 
                     return (
                       <div key={grupo.chave}
@@ -1012,11 +1024,32 @@ const Flashcards = () => {
                                 <p className="text-[9px] text-muted-foreground">Pendentes</p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 text-violet-400">
-                              <span className="text-xs font-medium">{hasPendentes ? "Revisar" : "Ver"}</span>
-                              <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
+                            <div className="flex items-center gap-2">
+                              {/* MELHORIA 5: botão excluir grupo */}
+                              <button
+                                onClick={(e) => handleExcluirGrupo(grupo, e)}
+                                disabled={isExcluindo}
+                                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all border opacity-0 group-hover:opacity-100 ${
+                                  isConfirmando
+                                    ? "bg-red-500/20 border-red-500/40 text-red-400 opacity-100"
+                                    : "bg-black/30 border-white/10 text-muted-foreground hover:bg-red-500/15 hover:border-red-500/30 hover:text-red-400"
+                                }`}
+                              >
+                                {isExcluindo ? (
+                                  <div className="w-3 h-3 rounded-full border border-red-400/40 border-t-red-400 animate-spin" />
+                                ) : (
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                )}
+                                {isConfirmando ? "Confirmar?" : ""}
+                              </button>
+                              <div className="flex items-center gap-1 text-violet-400">
+                                <span className="text-xs font-medium">{hasPendentes ? "Revisar" : "Ver"}</span>
+                                <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </div>
                             </div>
                           </div>
 
@@ -1035,7 +1068,6 @@ const Flashcards = () => {
         </div>
       </main>
 
-      {/* Modal criar */}
       {modalCriar && (
         <ModalCriarFlashcard
           onFechar={() => setModalCriar(false)}

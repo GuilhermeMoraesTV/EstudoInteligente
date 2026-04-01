@@ -1,3 +1,4 @@
+// src/services/aiService.ts
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebaseConfig";
 
@@ -22,6 +23,9 @@ async function getGeminiKey(): Promise<string> {
   }
 }
 
+// ============================================================
+// CHAMADA GEMINI — SEM responseMimeType (evita JSON quebrado)
+// ============================================================
 async function chamarGemini(prompt: string, temperature = 0.4): Promise<string> {
   const apiKey = await getGeminiKey();
   const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -31,7 +35,7 @@ async function chamarGemini(prompt: string, temperature = 0.4): Promise<string> 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature, maxOutputTokens: 8192 },
+      generationConfig: { temperature, maxOutputTokens: 16000 },
     }),
   });
 
@@ -75,9 +79,11 @@ export interface RespostaIA {
 }
 
 // ============================================================
-// PARSER DE JSON ROBUSTO
+// PARSER JSON ROBUSTO — máquina de estados
+// Percorre caractere a caractere, detecta strings e substitui
+// quebras de linha REAIS por \n (escape), sem tocar na
+// estrutura do JSON fora das strings.
 // ============================================================
-
 function sanitizarStringsJSON(json: string): string {
   let resultado = "";
   let dentroString = false;
@@ -87,35 +93,106 @@ function sanitizarStringsJSON(json: string): string {
     const char = json[i];
     const code = json.charCodeAt(i);
 
-    if (escape) { resultado += char; escape = false; continue; }
-    if (char === "\\") { escape = true; resultado += char; continue; }
-    if (char === '"') { dentroString = !dentroString; resultado += char; continue; }
+    if (escape) {
+      resultado += char;
+      escape = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escape = true;
+      resultado += char;
+      continue;
+    }
+
+    if (char === '"') {
+      dentroString = !dentroString;
+      resultado += char;
+      continue;
+    }
 
     if (dentroString) {
-      if (char === "\n") resultado += "\\n";
-      else if (char === "\r") resultado += "\\r";
-      else if (char === "\t") resultado += "\\t";
-      else if (code < 0x20) { /* descarta */ }
-      else resultado += char;
-    } else {
-      resultado += char;
+      if (char === "\n") { resultado += "\\n"; continue; }
+      if (char === "\r") { resultado += "\\r"; continue; }
+      if (char === "\t") { resultado += "\\t"; continue; }
+      // Descarta caracteres de controle (U+0000–U+001F)
+      if (code < 0x20) continue;
     }
+
+    resultado += char;
   }
+
   return resultado;
 }
 
+// ============================================================
+// REPAIR DE JSON TRUNCADO — fecha estruturas abertas
+// quando o modelo para no meio por limite de tokens
+// ============================================================
+function repararJSONTruncado(json: string): string {
+  let texto = json;
+
+  // 1. Fecha string aberta se necessário
+  let dentroStr = false;
+  let esc = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (esc) { esc = false; continue; }
+    if (c === "\\") { esc = true; continue; }
+    if (c === '"') dentroStr = !dentroStr;
+  }
+  if (dentroStr) texto += '"';
+
+  // 2. Rastreia estruturas abertas
+  const pilha: string[] = [];
+  dentroStr = false;
+  esc = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (esc) { esc = false; continue; }
+    if (c === "\\") { esc = true; continue; }
+    if (c === '"') { dentroStr = !dentroStr; continue; }
+    if (dentroStr) continue;
+    if (c === "{") pilha.push("}");
+    else if (c === "[") pilha.push("]");
+    else if ((c === "}" || c === "]") && pilha.length > 0) pilha.pop();
+  }
+
+  // 3. Remove vírgula trailing e fecha estruturas
+  texto = texto.replace(/,\s*$/, "");
+  texto += pilha.reverse().join("");
+  return texto;
+}
+
 function extrairJSON(texto: string): string {
-  let limpo = texto.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
+  // 1. Remove fences de markdown
+  let limpo = texto
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/gi, "")
+    .trim();
 
+  // 2. Isola do primeiro { ao último } (ou repara se truncado)
   const inicioObj = limpo.indexOf("{");
-  const fimObj = limpo.lastIndexOf("}");
-  if (inicioObj !== -1 && fimObj !== -1) limpo = limpo.substring(inicioObj, fimObj + 1);
+  if (inicioObj !== -1) {
+    const fimObj = limpo.lastIndexOf("}");
+    if (fimObj > inicioObj) {
+      // JSON completo — isola normalmente
+      limpo = limpo.substring(inicioObj, fimObj + 1);
+    } else {
+      // JSON truncado — pega do { até o fim e tenta reparar
+      limpo = repararJSONTruncado(limpo.substring(inicioObj));
+    }
+  }
 
+  // 3. Corrige aspas tipográficas
   limpo = limpo.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+
+  // 4. Remove trailing commas antes de } ou ]
   limpo = limpo.replace(/,\s*([}\]])/g, "$1");
-  limpo = limpo.replace(/,\s*""\s*}/g, "}");
-  limpo = limpo.replace(/,\s*""\s*]/g, "]");
+
+  // 5. Sanitiza quebras de linha dentro de strings (correção principal)
   limpo = sanitizarStringsJSON(limpo);
+
   return limpo;
 }
 
@@ -133,7 +210,13 @@ function amostrarTexto(texto: string, maxChars = 20000): string {
   return `${inicio}\n\n[...]\n\n${meio}\n\n[...]\n\n${fim}`;
 }
 
-function extrairTrechoLocal(textoOriginal: string, titulo: string, descricao: string, minChars = 150, maxChars = 800): string {
+function extrairTrechoLocal(
+  textoOriginal: string,
+  titulo: string,
+  descricao: string,
+  minChars = 150,
+  maxChars = 800
+): string {
   const palavrasChave = [...titulo.split(/\s+/), ...descricao.split(/\s+/)]
     .map((p) => p.toLowerCase().replace(/[^a-záàãâéêíóôõúüç]/gi, ""))
     .filter((p) => p.length > 3);
@@ -148,8 +231,14 @@ function extrairTrechoLocal(textoOriginal: string, titulo: string, descricao: st
 
   for (const paragrafo of paragrafos) {
     const lower = paragrafo.toLowerCase();
-    const pontos = palavrasChave.reduce((acc, kw) => acc + (lower.includes(kw) ? 1 : 0), 0);
-    if (pontos > melhorPontos) { melhorPontos = pontos; melhor = paragrafo; }
+    const pontos = palavrasChave.reduce(
+      (acc, kw) => acc + (lower.includes(kw) ? 1 : 0),
+      0
+    );
+    if (pontos > melhorPontos) {
+      melhorPontos = pontos;
+      melhor = paragrafo;
+    }
   }
 
   if (!melhor && paragrafos.length > 0) melhor = paragrafos[0];
@@ -158,14 +247,18 @@ function extrairTrechoLocal(textoOriginal: string, titulo: string, descricao: st
 }
 
 // ============================================================
-// DISTRIBUIÇÃO DINÂMICA DE TIPOS DE QUESTÃO
+// DISTRIBUIÇÃO DINÂMICA DE TIPOS DE QUESTÃO (1:1:1)
 // ============================================================
 type TipoDistribuicao = "multipla" | "certo_errado" | "associacao";
 
-function gerarDistribuicaoTipos(quantidade: number, modo: "simples" | "elaborada"): TipoDistribuicao[] {
-  const pesos: Record<TipoDistribuicao, number> = modo === "elaborada"
-    ? { multipla: 2, certo_errado: 2, associacao: 2 }
-    : { multipla: 3, certo_errado: 2, associacao: 1 };
+function gerarDistribuicaoTipos(
+  quantidade: number,
+  modo: "simples" | "elaborada"
+): TipoDistribuicao[] {
+  const pesos: Record<TipoDistribuicao, number> =
+    modo === "elaborada"
+      ? { multipla: 2, certo_errado: 2, associacao: 2 }
+      : { multipla: 3, certo_errado: 2, associacao: 1 };
 
   const pool: TipoDistribuicao[] = [];
   for (const tipo of Object.keys(pesos) as TipoDistribuicao[]) {
@@ -189,33 +282,44 @@ function gerarDistribuicaoTipos(quantidade: number, modo: "simples" | "elaborada
 }
 
 function descreverDistribuicao(tipos: TipoDistribuicao[]): string {
-  const contagem: Record<TipoDistribuicao, number> = { multipla: 0, certo_errado: 0, associacao: 0 };
+  const contagem: Record<TipoDistribuicao, number> = {
+    multipla: 0,
+    certo_errado: 0,
+    associacao: 0,
+  };
   tipos.forEach((t) => contagem[t]++);
   const partes: string[] = [];
-  if (contagem.multipla > 0) partes.push(`${contagem.multipla} de Múltipla Escolha (5 alternativas A-E)`);
-  if (contagem.certo_errado > 0) partes.push(`${contagem.certo_errado} de Certo/Errado (alternativas: "A) Certo" e "B) Errado")`);
-  if (contagem.associacao > 0) partes.push(`${contagem.associacao} de Associação/Julgamento (itens I, II, III, IV no enunciado)`);
+  if (contagem.multipla > 0)
+    partes.push(`${contagem.multipla} de Múltipla Escolha (5 alternativas A-E)`);
+  if (contagem.certo_errado > 0)
+    partes.push(
+      `${contagem.certo_errado} de Certo/Errado (alternativas: "A) Certo" e "B) Errado")`
+    );
+  if (contagem.associacao > 0)
+    partes.push(
+      `${contagem.associacao} de Associação/Julgamento (itens I, II, III, IV no enunciado)`
+    );
   return partes.join(", ");
 }
 
 // ============================================================
 // LIMPEZA DE FLASHCARDS
 // ============================================================
-function limparFlashcardsGerados(flashcards: Array<{ frente: string; verso: string }>): Array<{ frente: string; verso: string }> {
+function limparFlashcardsGerados(
+  flashcards: Array<{ frente: string; verso: string }>
+): Array<{ frente: string; verso: string }> {
   return flashcards
     .filter((fc) => fc.frente && fc.verso)
     .map((fc) => ({
-      // Limpa frente: remove prefixos de alternativa, gabarito comentado
       frente: fc.frente
         .replace(/^[A-E]\)\s*/i, "")
         .replace(/✅|❌|📌|💡/g, "")
         .replace(/CORRETA?\s*[A-E]\)?\s*:?/gi, "")
         .replace(/^(Conceito|Definição|Pergunta|Questão):\s*/i, "")
         .trim(),
-      // Limpa verso: remove listas de alternativas, gabarito comentado
       verso: fc.verso
-        .replace(/[A-E]\)\s+[^\n]+/g, "")   // remove "A) texto B) texto"
-        .replace(/✅.*$/gm, "")              // remove linhas de gabarito
+        .replace(/[A-E]\)\s+[^\n]+/g, "")
+        .replace(/✅.*$/gm, "")
         .replace(/❌.*$/gm, "")
         .replace(/📌.*$/gm, "")
         .replace(/💡.*$/gm, "")
@@ -230,9 +334,13 @@ function limparFlashcardsGerados(flashcards: Array<{ frente: string; verso: stri
 // ============================================================
 // MAPEAMENTO DE ASSUNTOS
 // ============================================================
-export const mapearAssuntos = async (texto: string, nomeArquivo?: string): Promise<RespostaMapaAssuntos> => {
+export const mapearAssuntos = async (
+  texto: string,
+  nomeArquivo?: string
+): Promise<RespostaMapaAssuntos> => {
   const textoLimpo = texto.trim();
-  const nomeBase = nomeArquivo?.replace(/\.(pdf|txt|docx?)$/i, "") || "Material de Estudo";
+  const nomeBase =
+    nomeArquivo?.replace(/\.(pdf|txt|docx?)$/i, "") || "Material de Estudo";
   const textoAmostrado = amostrarTexto(textoLimpo, 22000);
 
   const prompt = `Você é especialista pedagógico em concursos públicos brasileiros.
@@ -270,17 +378,29 @@ ${textoAmostrado}`;
   try {
     const raw = await chamarGemini(prompt, 0.2);
     const json = extrairJSON(raw);
-    const dados = JSON.parse(json) as { tituloGeral: string; assuntos: Array<{ id: string; titulo: string; descricao: string }> };
+    const dados = JSON.parse(json) as {
+      tituloGeral: string;
+      assuntos: Array<{ id: string; titulo: string; descricao: string }>;
+    };
 
-    if (!dados.tituloGeral || !Array.isArray(dados.assuntos) || dados.assuntos.length === 0)
+    if (
+      !dados.tituloGeral ||
+      !Array.isArray(dados.assuntos) ||
+      dados.assuntos.length === 0
+    )
       throw new Error("Estrutura inválida");
 
-    const palavrasProibidas = ["apresentação", "prefácio", "sumário", "índice", "sobre o autor", "banca", "edital de referência", "como usar", "introdução ao material", "nota do autor", "nota editorial"];
+    const palavrasProibidas = [
+      "apresentação", "prefácio", "sumário", "índice", "sobre o autor",
+      "banca", "edital de referência", "como usar", "introdução ao material",
+      "nota do autor", "nota editorial",
+    ];
     const assuntosFiltrados = dados.assuntos.filter((a) => {
       const lower = a.titulo.toLowerCase();
       return !palavrasProibidas.some((p) => lower.includes(p));
     });
-    const listaFinal = assuntosFiltrados.length > 0 ? assuntosFiltrados : dados.assuntos;
+    const listaFinal =
+      assuntosFiltrados.length > 0 ? assuntosFiltrados : dados.assuntos;
 
     return {
       tituloGeral: dados.tituloGeral,
@@ -295,7 +415,14 @@ ${textoAmostrado}`;
     console.error("Erro no mapeamento:", e);
     return {
       tituloGeral: nomeBase,
-      assuntos: [{ id: "assunto_1", titulo: nomeBase, descricao: "Conteúdo completo do material enviado", trecho: textoLimpo.substring(0, 800) }],
+      assuntos: [
+        {
+          id: "assunto_1",
+          titulo: nomeBase,
+          descricao: "Conteúdo completo do material enviado",
+          trecho: textoLimpo.substring(0, 800),
+        },
+      ],
     };
   }
 };
@@ -314,11 +441,15 @@ export const gerarConteudoParaAssunto = async (
 
   const fonteDados = usarConhecimentoIA
     ? `ASSUNTO: ${assunto.titulo} — ${assunto.descricao}\nUse seu conhecimento sobre este assunto para gerar questões de alto nível para concurso público.`
-    : `CONTEÚDO DE REFERÊNCIA (NÃO mencione o material, apostila ou texto nas questões):\n${textoBase.substring(0, 5000)}`;
+    : `CONTEÚDO DE REFERÊNCIA (NÃO mencione o material, apostila ou texto nas questões):\n${textoBase.substring(0, 3000)}`;
 
-  const contextoAdaptativo = errosRecentes && errosRecentes.length > 0
-    ? `\nFOCO ADAPTATIVO: O aluno errou questões sobre os seguintes pontos — gere questões que reforcem esses temas:\n${errosRecentes.slice(0, 3).map((e, i) => `${i + 1}. ${e.substring(0, 120)}`).join("\n")}\n`
-    : "";
+  const contextoAdaptativo =
+    errosRecentes && errosRecentes.length > 0
+      ? `\nFOCO ADAPTATIVO: O aluno errou questões sobre os seguintes pontos — gere questões que reforcem esses temas:\n${errosRecentes
+          .slice(0, 3)
+          .map((e, i) => `${i + 1}. ${e.substring(0, 120)}`)
+          .join("\n")}\n`
+      : "";
 
   const distribuicao = gerarDistribuicaoTipos(quantidadeQuestoes, tipoQuestao);
   const descricaoDistribuicao = descreverDistribuicao(distribuicao);
@@ -350,16 +481,14 @@ FORMATO DE CADA TIPO:
     "A) Apenas I", "B) I e II", "C) II e III", "D) Apenas III", "E) Todos estão corretos"
   - "correta" deve ser a alternativa exata (ex: "B) I e II")`;
 
-  // FLASHCARDS — padrão conceito/definição
-  const instrucaoFlashcards = `FLASHCARDS — REGRAS OBRIGATÓRIAS (MUITO IMPORTANTE):
+  const instrucaoFlashcards = `FLASHCARDS — REGRAS OBRIGATÓRIAS:
 - São cartões de MEMORIZAÇÃO. NÃO são questões.
 - NUNCA copie enunciados de questões.
 - NUNCA coloque alternativas (A), B), C)...) nos flashcards.
 - NUNCA coloque gabarito comentado (✅ ❌ 📌 💡) nos flashcards.
-- PADRÃO OBRIGATÓRIO: use o modelo CONCEITO ↔ DEFINIÇÃO:
-  * "frente": nome do conceito, termo técnico ou pergunta direta (máx 10 palavras). Ex: "O que é habeas corpus?"
-  * "verso": definição objetiva, resposta direta (máx 20 palavras). Ex: "Remédio constitucional que protege a liberdade de locomoção ilegal ou abusiva."
-- Varie os formatos: definição→conceito, conceito→definição, causa→efeito, lei→conteúdo
+- PADRÃO OBRIGATÓRIO — CONCEITO ↔ DEFINIÇÃO:
+  * "frente": nome do conceito, termo técnico ou pergunta direta (máx 10 palavras)
+  * "verso": definição objetiva, resposta direta (máx 20 palavras)
 - Cada flashcard = 1 único conceito. Sem listas. Sem parágrafos.`;
 
   const promptFlash = `Você é elaborador de questões de memorização para concursos públicos brasileiros.
@@ -409,42 +538,59 @@ Gere exatamente ${quantidadeQuestoes} questões e ${quantidadeQuestoes} flashcar
 
 {"resumo":"Síntese dos pontos principais","questoes":[{"pergunta":"Enunciado completo","alternativas":["A) texto","B) texto","C) texto","D) texto","E) texto"],"correta":"A) texto exato","explicacao":"✅ CORRETA A: motivo detalhado\\n❌ B: motivo\\n❌ C: motivo\\n❌ D: motivo\\n❌ E: motivo\\n📌 Conceito-chave: fundamento\\n💡 Dica Prova: estrategia","tipo":"elaborada"}],"flashcards":[{"frente":"O que é X?","verso":"X é a definição direta e objetiva do conceito"}]}`;
 
-  const promptEscolhido = tipoQuestao === "simples" ? promptFlash : promptConcurso;
+  const promptEscolhido =
+    tipoQuestao === "simples" ? promptFlash : promptConcurso;
 
   try {
     const raw = await chamarGemini(promptEscolhido, 0.65);
     const json = extrairJSON(raw);
     const dados: RespostaIA = JSON.parse(json);
 
-    if (!dados.questoes || dados.questoes.length === 0) throw new Error("Nenhuma questão gerada");
+    if (!dados.questoes || dados.questoes.length === 0)
+      throw new Error("Nenhuma questão gerada");
 
-    // Limpa flashcards
-    if (dados.flashcards) dados.flashcards = limparFlashcardsGerados(dados.flashcards);
+    if (dados.flashcards)
+      dados.flashcards = limparFlashcardsGerados(dados.flashcards);
 
     return dados;
   } catch (e) {
     console.error("Erro ao gerar conteúdo:", e);
+
+    // Fallback com prompt simplificado
     try {
-      const promptFallback = tipoQuestao === "simples"
-        ? `Elabore ${quantidadeQuestoes} questoes curtas sobre ${assunto.titulo}. JSON puro: {"resumo":"pontos","questoes":[{"pergunta":"Qual e X?","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: definicao\\n💡 Dica: dica","tipo":"simples"}],"flashcards":[{"frente":"O que e X?","verso":"X e a definicao direta"}]}`
-        : `Elabore ${quantidadeQuestoes} questoes de concurso sobre ${assunto.titulo}. JSON puro: {"resumo":"sintese","questoes":[{"pergunta":"Assinale sobre X:","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: fundamento\\n💡 Dica Prova: estrategia","tipo":"elaborada"}],"flashcards":[{"frente":"O que e X?","verso":"X e o conceito de forma objetiva"}]}`;
+      const promptFallback =
+        tipoQuestao === "simples"
+          ? `Elabore ${quantidadeQuestoes} questoes curtas sobre ${assunto.titulo}. JSON puro: {"resumo":"pontos","questoes":[{"pergunta":"Qual e X?","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: definicao\\n💡 Dica: dica","tipo":"simples"}],"flashcards":[{"frente":"O que e X?","verso":"X e a definicao direta"}]}`
+          : `Elabore ${quantidadeQuestoes} questoes de concurso sobre ${assunto.titulo}. JSON puro: {"resumo":"sintese","questoes":[{"pergunta":"Assinale sobre X:","alternativas":["A) op1","B) op2","C) op3","D) op4","E) op5"],"correta":"A) op1","explicacao":"✅ CORRETA A: motivo\\n❌ B: motivo\\n📌 Conceito: fundamento\\n💡 Dica Prova: estrategia","tipo":"elaborada"}],"flashcards":[{"frente":"O que e X?","verso":"X e o conceito de forma objetiva"}]}`;
 
       const raw2 = await chamarGemini(promptFallback, 0.5);
       const json2 = extrairJSON(raw2);
       const dados2: RespostaIA = JSON.parse(json2);
+
       if (dados2.questoes?.length > 0) {
-        if (dados2.flashcards) dados2.flashcards = limparFlashcardsGerados(dados2.flashcards);
+        if (dados2.flashcards)
+          dados2.flashcards = limparFlashcardsGerados(dados2.flashcards);
         return dados2;
       }
-    } catch { /* fallback final silencioso */ }
-    return { resumo: "Não foi possível gerar no momento.", questoes: [], flashcards: [] };
+    } catch {
+      /* fallback silencioso */
+    }
+
+    return {
+      resumo: "Não foi possível gerar no momento.",
+      questoes: [],
+      flashcards: [],
+    };
   }
 };
 
 // ============================================================
 // REFORÇO (quando erra ou marca como difícil)
 // ============================================================
-export const gerarReforcoParaQuestao = async (perguntaOriginal: string, assunto: string): Promise<RespostaIA> => {
+export const gerarReforcoParaQuestao = async (
+  perguntaOriginal: string,
+  assunto: string
+): Promise<RespostaIA> => {
   const prompt = `Você é professor de concursos públicos especialista em reforço de aprendizagem.
 
 Aluno precisa de reforço sobre ${assunto}. Questão de referência: ${perguntaOriginal}
@@ -452,8 +598,8 @@ Aluno precisa de reforço sobre ${assunto}. Questão de referência: ${perguntaO
 Gere 3 questões de reforço (ângulos diferentes) e 3 flashcards de memorização.
 
 FLASHCARDS — PADRÃO CONCEITO/DEFINIÇÃO:
-- "frente": pergunta direta ou nome do conceito (máx 10 palavras). Ex: "O que é X?"
-- "verso": definição objetiva (máx 20 palavras). Ex: "X é a situação onde Y ocorre."
+- "frente": pergunta direta ou nome do conceito (máx 10 palavras)
+- "verso": definição objetiva (máx 20 palavras)
 - PROIBIDO: alternativas, gabaritos comentados, listas, textos longos
 
 REGRAS DE JSON:
@@ -467,7 +613,8 @@ REGRAS DE JSON:
     const raw = await chamarGemini(prompt, 0.6);
     const json = extrairJSON(raw);
     const dados: RespostaIA = JSON.parse(json);
-    if (dados.flashcards) dados.flashcards = limparFlashcardsGerados(dados.flashcards);
+    if (dados.flashcards)
+      dados.flashcards = limparFlashcardsGerados(dados.flashcards);
     return dados;
   } catch {
     return { resumo: "Erro ao gerar reforço", questoes: [], flashcards: [] };
@@ -502,7 +649,9 @@ Retorne APENAS JSON puro:
   try {
     const raw = await chamarGemini(prompt, 0.6);
     const json = extrairJSON(raw);
-    const dados = JSON.parse(json) as { flashcards: Array<{ frente: string; verso: string }> };
+    const dados = JSON.parse(json) as {
+      flashcards: Array<{ frente: string; verso: string }>;
+    };
     return limparFlashcardsGerados(dados.flashcards || []);
   } catch {
     return [];
@@ -512,9 +661,16 @@ Retorne APENAS JSON puro:
 // ============================================================
 // FEEDBACK DE DESEMPENHO
 // ============================================================
-export const gerarFeedbackDesempenho = async (taxaAcerto: number, temasErrados: string[]): Promise<string> => {
+export const gerarFeedbackDesempenho = async (
+  taxaAcerto: number,
+  temasErrados: string[]
+): Promise<string> => {
   const prompt = `Tutor sênior de concursos públicos. O aluno obteve ${taxaAcerto}% de acerto.
-${temasErrados.length > 0 ? `Pontos fracos: ${temasErrados.slice(0, 3).join(", ")}.` : "Desempenho excelente."}
+${
+  temasErrados.length > 0
+    ? `Pontos fracos: ${temasErrados.slice(0, 3).join(", ")}.`
+    : "Desempenho excelente."
+}
 Feedback motivador, estratégico e direto em no máximo 2 frases.`;
 
   try {

@@ -1,5 +1,3 @@
-// src/pages/Estudo.tsx
-// PATCH: importa ResultScreen de ResultScreenEstudo.tsx
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
